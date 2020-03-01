@@ -1,0 +1,1 @@
+target_sources(learn_vulkan PRIVATE VulkanApp.cpp VulkanFunctions.cpp)
