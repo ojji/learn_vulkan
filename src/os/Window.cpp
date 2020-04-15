@@ -1,12 +1,11 @@
 #include "Window.h"
-#include <thread>
 #include <chrono>
 #include <iostream>
+#include <thread>
 
 namespace Os {
 Window::Window(Core::VulkanApp& vulkanApp) : m_WindowParameters(WindowParameters()), m_VulkanApp(vulkanApp)
-{
-}
+{}
 
 Window::~Window()
 {
@@ -50,9 +49,19 @@ bool Window::Create(wchar_t const windowTitle[])
     return false;
   }
 
-  RECT windowRect {0, 0, 1280, 720 };
+  RECT windowRect{ 0, 0, 1280, 720 };
   AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, false);
-  m_WindowParameters.m_Handle = CreateWindow(WINDOW_CLASS_NAME, windowTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, windowRect.right - windowRect.left, windowRect.bottom - windowRect.top, nullptr, nullptr, m_WindowParameters.m_Instance, nullptr);
+  m_WindowParameters.m_Handle = CreateWindow(WINDOW_CLASS_NAME,
+                                             windowTitle,
+                                             WS_OVERLAPPEDWINDOW,
+                                             CW_USEDEFAULT,
+                                             CW_USEDEFAULT,
+                                             windowRect.right - windowRect.left,
+                                             windowRect.bottom - windowRect.top,
+                                             nullptr,
+                                             nullptr,
+                                             m_WindowParameters.m_Instance,
+                                             nullptr);
   if (!m_WindowParameters.m_Handle) {
     return false;
   }
@@ -71,25 +80,22 @@ bool Window::RenderLoop() const
   volatile bool isRunning = true;
 
   while (isRunning) {
-    if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
       switch (msg.message) {
-      case WM_QUIT:
+      case WM_QUIT: {
         isRunning = false;
-        break;
+      } break;
       }
       TranslateMessage(&msg);
       DispatchMessage(&msg);
     }
-    else {
-      // Draw here if you can      
-      if (m_VulkanApp.CanRender()) {
-        if (!m_VulkanApp.Render()) {
-          PostQuitMessage(0);
-        }
+    // Draw here if you can
+    if (m_VulkanApp.CanRender()) {
+      if (!m_VulkanApp.Render()) {
+        PostQuitMessage(0);
       }
-      else {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-      }
+    } else {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   }
   return true;
@@ -100,5 +106,4 @@ WindowParameters Window::GetWindowParameters() const
 {
   return m_WindowParameters;
 }
-}
-
+} // namespace Os

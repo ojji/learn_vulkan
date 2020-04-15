@@ -1,5 +1,5 @@
 #ifndef VK_EXPORTED_FUNCTION
-#define VK_EXPORTED_FUNCTION( fun )
+#define VK_EXPORTED_FUNCTION(fun)
 #endif
 
 VK_EXPORTED_FUNCTION(vkGetInstanceProcAddr)
@@ -7,7 +7,7 @@ VK_EXPORTED_FUNCTION(vkGetInstanceProcAddr)
 #undef VK_EXPORTED_FUNCTION
 
 #ifndef VK_GLOBAL_FUNCTION
-#define VK_GLOBAL_FUNCTION( fun )
+#define VK_GLOBAL_FUNCTION(fun)
 #endif
 
 VK_GLOBAL_FUNCTION(vkCreateInstance)
@@ -18,7 +18,7 @@ VK_GLOBAL_FUNCTION(vkEnumerateInstanceLayerProperties)
 #undef VK_GLOBAL_FUNCTION
 
 #ifndef VK_INSTANCE_FUNCTION
-#define VK_INSTANCE_FUNCTION( fun )
+#define VK_INSTANCE_FUNCTION(fun)
 #endif
 
 VK_INSTANCE_FUNCTION(vkEnumeratePhysicalDevices)
@@ -46,7 +46,7 @@ VK_INSTANCE_FUNCTION(vkGetPhysicalDeviceWin32PresentationSupportKHR)
 #undef VK_INSTANCE_FUNCTION
 
 #ifndef VK_DEVICE_FUNCTION
-#define VK_DEVICE_FUNCTION( fun )
+#define VK_DEVICE_FUNCTION(fun)
 #endif
 
 VK_DEVICE_FUNCTION(vkGetDeviceQueue)
@@ -64,6 +64,7 @@ VK_DEVICE_FUNCTION(vkCreateCommandPool)
 VK_DEVICE_FUNCTION(vkAllocateCommandBuffers)
 VK_DEVICE_FUNCTION(vkBeginCommandBuffer)
 VK_DEVICE_FUNCTION(vkEndCommandBuffer)
+VK_DEVICE_FUNCTION(vkFreeCommandBuffers)
 VK_DEVICE_FUNCTION(vkDestroyCommandPool)
 VK_DEVICE_FUNCTION(vkQueueSubmit)
 
@@ -80,25 +81,41 @@ VK_DEVICE_FUNCTION(vkDestroyFence)
 // Draw commands
 VK_DEVICE_FUNCTION(vkCmdClearColorImage)
 
+// Render pass and frame buffers
+VK_DEVICE_FUNCTION(vkCreateRenderPass)
+VK_DEVICE_FUNCTION(vkDestroyRenderPass)
+VK_DEVICE_FUNCTION(vkCreateFramebuffer)
+VK_DEVICE_FUNCTION(vkDestroyFramebuffer)
+VK_DEVICE_FUNCTION(vkCreateImageView)
+VK_DEVICE_FUNCTION(vkDestroyImageView)
+VK_DEVICE_FUNCTION(vkCmdBeginRenderPass)
+VK_DEVICE_FUNCTION(vkCmdEndRenderPass)
+
+// Shaders
+VK_DEVICE_FUNCTION(vkCreateShaderModule)
+VK_DEVICE_FUNCTION(vkDestroyShaderModule)
+
+// Pipelines
+VK_DEVICE_FUNCTION(vkCreateGraphicsPipelines)
+VK_DEVICE_FUNCTION(vkDestroyPipeline)
+VK_DEVICE_FUNCTION(vkCreatePipelineLayout)
+VK_DEVICE_FUNCTION(vkDestroyPipelineLayout)
+VK_DEVICE_FUNCTION(vkCmdBindPipeline)
+
+// Draw
+VK_DEVICE_FUNCTION(vkCmdDraw)
 
 #undef VK_DEVICE_FUNCTION
 
 #ifndef VK_EXPAND_VERSION
-#define VK_EXPAND_VERSION( version )  \
-  VK_VERSION_MAJOR(version) << "." << \
-  VK_VERSION_MINOR(version) << "." << \
-  VK_VERSION_PATCH(version)
+#define VK_EXPAND_VERSION(version)                                                                                     \
+  VK_VERSION_MAJOR(version) << "." << VK_VERSION_MINOR(version) << "." << VK_VERSION_PATCH(version)
 #endif
 
 #ifndef VK_EXPAND_EXTENT2D
-#define VK_EXPAND_EXTENT2D( extent2D )  \
-  "(" << extent2D.width <<              \
-  "," << extent2D.height << ")"
+#define VK_EXPAND_EXTENT2D(extent2D) "(" << extent2D.width << "," << extent2D.height << ")"
 #endif
 
 #ifndef VK_EXPAND_EXTENT3D
-#define VK_EXPAND_EXTENT3D( extent3D )  \
-  "(" << extent3D.width <<              \
-  "," << extent3D.height <<             \
-  "," << extent3D.depth << ")"          
+#define VK_EXPAND_EXTENT3D(extent3D) "(" << extent3D.width << "," << extent3D.height << "," << extent3D.depth << ")"
 #endif

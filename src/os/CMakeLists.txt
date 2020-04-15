@@ -1,1 +1,1 @@
-target_sources(learn_vulkan PRIVATE Window.cpp)
+target_sources(learn_vulkan PRIVATE Window.cpp ${TARGET_BUILD_PLATFORM}/Common.cpp)

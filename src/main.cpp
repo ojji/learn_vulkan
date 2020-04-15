@@ -1,19 +1,33 @@
-#include "os/Window.h"
 #include "core/VulkanApp.h"
-#include <filesystem>
-#include <thread>
+#include "core/VulkanFunctions.h"
+#include "os/Common.h"
+#include "os/Window.h"
 #include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include "core/VulkanFunctions.h"
+#include <thread>
 
 class Sample : public Core::VulkanApp
 {
 public:
-  Sample(std::ostream& debugStream) : VulkanApp(debugStream, true), m_Window(Os::Window(*this)), m_RenderFinishedFence(nullptr) {}
+  Sample(std::ostream& debugStream) :
+    VulkanApp(debugStream, true),
+    m_Window(Os::Window(*this)),
+    m_RenderFinishedFence(nullptr)
+  {}
 
   virtual ~Sample()
   {
+    Core::vkDeviceWaitIdle(m_VulkanParameters.m_Device);
+    if (m_NextImageAvailableSemaphore) {
+      Core::vkDestroySemaphore(m_VulkanParameters.m_Device, m_NextImageAvailableSemaphore, nullptr);
+      m_NextImageAvailableSemaphore = nullptr;
+    }
+    if (m_RenderFinishedSemaphore) {
+      Core::vkDestroySemaphore(m_VulkanParameters.m_Device, m_RenderFinishedSemaphore, nullptr);
+      m_RenderFinishedSemaphore = nullptr;
+    }
     if (m_RenderFinishedFence) {
       Core::vkDestroyFence(m_VulkanParameters.m_Device, m_RenderFinishedFence, nullptr);
       m_RenderFinishedFence = nullptr;
@@ -26,33 +40,32 @@ public:
       return false;
     }
 
-    if (!this->PrepareVulkan(m_Window.GetWindowParameters())) {
+    if (!PrepareVulkan(m_Window.GetWindowParameters())) {
       return false;
     }
 
-    if (!CreateRenderFinishedFence()) {
+    if (!CreateSwapchainAndRenderResources()) {
+      return false;
+    }
+
+    if (!CreateSemaphoresAndFences()) {
       return false;
     }
 
     return true;
   }
 
-  [[nodiscard]]
-  bool StartRenderLoop() const
-  {
-    return m_Window.RenderLoop();
-  }
+  [[nodiscard]] bool StartMainLoop() const { return m_Window.RenderLoop(); }
 
   bool Render() override
   {
     uint32_t acquiredImageIdx;
-    VkResult result = Core::vkAcquireNextImageKHR(
-      m_VulkanParameters.m_Device,
-      m_VulkanParameters.m_Swapchain,
-      UINT64_MAX,
-      m_VulkanParameters.m_NextImageAvailableSemaphore,
-      nullptr,
-      &acquiredImageIdx);
+    VkResult result = Core::vkAcquireNextImageKHR(m_VulkanParameters.m_Device,
+                                                  m_VulkanParameters.m_Swapchain.m_Handle,
+                                                  UINT64_MAX,
+                                                  m_NextImageAvailableSemaphore,
+                                                  nullptr,
+                                                  &acquiredImageIdx);
 
     switch (result) {
     case VK_SUCCESS:
@@ -64,7 +77,7 @@ public:
 #endif
       Core::vkDeviceWaitIdle(m_VulkanParameters.m_Device);
       Core::vkResetFences(m_VulkanParameters.m_Device, 1, &m_RenderFinishedFence);
-      return RecreateSwapchain();
+      return RecreateSwapchainAndRenderResources();
 
     default:
       std::cerr << "Render error! (" << result << ")" << std::endl;
@@ -72,39 +85,30 @@ public:
     }
 
     VkPipelineStageFlags waitStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    VkSubmitInfo submitInfo = {
-      VK_STRUCTURE_TYPE_SUBMIT_INFO,
-      nullptr,
-      1,
-      &m_VulkanParameters.m_NextImageAvailableSemaphore,
-      &waitStageMask,
-      1,
-      &m_VulkanParameters.m_PresentCommandBuffers[acquiredImageIdx],
-      1,
-      &m_VulkanParameters.m_RenderFinishedSemaphore
-    };
+    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                                nullptr,
+                                1,
+                                &m_NextImageAvailableSemaphore,
+                                &waitStageMask,
+                                1,
+                                &m_VulkanParameters.m_PresentCommandBuffers[acquiredImageIdx],
+                                1,
+                                &m_RenderFinishedSemaphore };
 
-    result = Core::vkQueueSubmit(
-      m_VulkanParameters.m_Queue,
-      1,
-      &submitInfo,
-      m_RenderFinishedFence
-    );
+    result = Core::vkQueueSubmit(m_VulkanParameters.m_Queue, 1, &submitInfo, m_RenderFinishedFence);
     if (result != VK_SUCCESS) {
       std::cerr << "Error while submitting commands to the present queue" << std::endl;
       return false;
     }
 
-    VkPresentInfoKHR presentInfo = {
-      VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-      nullptr,
-      1,
-      &m_VulkanParameters.m_RenderFinishedSemaphore,
-      1,
-      &m_VulkanParameters.m_Swapchain,
-      &acquiredImageIdx,
-      nullptr
-    };
+    VkPresentInfoKHR presentInfo = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                                     nullptr,
+                                     1,
+                                     &m_RenderFinishedSemaphore,
+                                     1,
+                                     &m_VulkanParameters.m_Swapchain.m_Handle,
+                                     &acquiredImageIdx,
+                                     nullptr };
 
     result = Core::vkQueuePresentKHR(m_VulkanParameters.m_Queue, &presentInfo);
     switch (result) {
@@ -117,7 +121,7 @@ public:
 #endif
       Core::vkDeviceWaitIdle(m_VulkanParameters.m_Device);
       Core::vkResetFences(m_VulkanParameters.m_Device, 1, &m_RenderFinishedFence);
-      return RecreateSwapchain();
+      return RecreateSwapchainAndRenderResources();
     default:
       std::cerr << "Render error! (" << result << ")" << std::endl;
       return false;
@@ -138,36 +142,46 @@ public:
 
   [[nodiscard]] bool CanRender() const override { return true; }
 
-  bool CreateRenderFinishedFence()
+private:
+  bool CreateSemaphoresAndFences()
   {
-    VkFenceCreateInfo fenceCreateInfo = {
-        VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        nullptr,
-        0
-    };
+    VkFenceCreateInfo fenceCreateInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, 0 };
 
-    VkResult const result = Core::vkCreateFence(
-      m_VulkanParameters.m_Device,
-      &fenceCreateInfo,
-      nullptr,
-      &m_RenderFinishedFence);
+    VkResult result =
+      Core::vkCreateFence(m_VulkanParameters.m_Device, &fenceCreateInfo, nullptr, &m_RenderFinishedFence);
 
     if (result != VK_SUCCESS) {
       std::cerr << "Could not create the fence!" << result << std::endl;
       return false;
     }
 
+    VkSemaphoreCreateInfo semaphoreCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0 };
+
+    result = Core::vkCreateSemaphore(
+      m_VulkanParameters.m_Device, &semaphoreCreateInfo, nullptr, &m_NextImageAvailableSemaphore);
+    if (result != VK_SUCCESS) {
+      std::cerr << "Could not create the semaphore for the next image available: " << result << std::endl;
+      return false;
+    }
+
+    result =
+      Core::vkCreateSemaphore(m_VulkanParameters.m_Device, &semaphoreCreateInfo, nullptr, &m_RenderFinishedSemaphore);
+    if (result != VK_SUCCESS) {
+      std::cerr << "Could not create the semaphore for the next image available: " << result << std::endl;
+      return false;
+    }
     return true;
   }
 
-private:
   Os::Window m_Window;
   VkFence m_RenderFinishedFence;
+  VkSemaphore m_NextImageAvailableSemaphore;
+  VkSemaphore m_RenderFinishedSemaphore;
 };
 
 int main()
 {
-  std::filesystem::path const debugFilePath = std::filesystem::current_path() / "debug.txt";
+  std::filesystem::path const debugFilePath = Os::GetExecutableDirectory() / "debug.txt";
   std::ofstream debugFile(debugFilePath);
 
   if (!debugFile.is_open()) {
@@ -178,10 +192,12 @@ int main()
   Sample app(debugFile);
 
   if (!app.Initialize()) {
+    debugFile.close();
     return 1;
   }
 
-  if (!app.StartRenderLoop()) {
+  if (!app.StartMainLoop()) {
+    debugFile.close();
     return 1;
   }
 
