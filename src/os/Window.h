@@ -7,15 +7,7 @@
 #include "core/VulkanApp.h"
 
 namespace Os {
-
-struct WindowParameters
-{
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-  HWND m_Handle;
-  HINSTANCE m_Instance;
-  WindowParameters() : m_Handle(), m_Instance(){ }
-#endif  
-};
+class Window;
 
 class Window
 {

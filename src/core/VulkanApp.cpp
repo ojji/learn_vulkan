@@ -35,7 +35,8 @@ VulkanApp::VulkanApp(bool vsyncEnabled) : VulkanApp(std::cout, vsyncEnabled)
 VulkanApp::VulkanApp(std::ostream& debugOutput, bool vsyncEnabled) :
   m_VulkanLoaderHandle(nullptr),
   m_VulkanParameters(VulkanParameters()),
-  m_DebugOutput(debugOutput)
+  m_DebugOutput(debugOutput),
+  m_WindowParameters(Os::WindowParameters())
 {
   m_DebugOutput << std::showbase;
   m_VulkanParameters.m_VsyncEnabled = vsyncEnabled;
@@ -80,6 +81,7 @@ VulkanApp::~VulkanApp()
 
 bool VulkanApp::PrepareVulkan(Os::WindowParameters windowParameters)
 {
+  m_WindowParameters = windowParameters;
   if (!LoadVulkanLibrary()) {
     std::cerr << "Could not load Vulkan library" << std::endl;
     return false;
@@ -172,7 +174,7 @@ bool VulkanApp::PrepareVulkan(Os::WindowParameters windowParameters)
     return false;
   }
 
-  if (!CreatePresentationSurface(windowParameters)) {
+  if (!CreatePresentationSurface()) {
     std::cerr << "Could not create the presentation surface" << std::endl;
     return false;
   }
@@ -357,12 +359,14 @@ bool VulkanApp::CreateInstance(std::vector<char const*> const& requiredExtension
   return true;
 }
 
-bool VulkanApp::CreatePresentationSurface(Os::WindowParameters windowParameters)
+bool VulkanApp::CreatePresentationSurface()
 {
 #ifdef VK_USE_PLATFORM_WIN32_KHR
-  VkWin32SurfaceCreateInfoKHR surfaceCreateInfo = {
-    VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR, nullptr, 0, windowParameters.m_Instance, windowParameters.m_Handle
-  };
+  VkWin32SurfaceCreateInfoKHR surfaceCreateInfo = { VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
+                                                    nullptr,
+                                                    0,
+                                                    m_WindowParameters.m_Instance,
+                                                    m_WindowParameters.m_Handle };
 
   VkResult const result = vkCreateWin32SurfaceKHR(
     m_VulkanParameters.m_Instance, &surfaceCreateInfo, nullptr, &m_VulkanParameters.m_PresentSurface);
@@ -735,7 +739,10 @@ VkSurfaceFormatKHR VulkanApp::GetSwapchainFormat(std::vector<VkSurfaceFormatKHR>
 
 VkExtent2D VulkanApp::GetSwapchainExtent() const
 {
-  return m_VulkanParameters.m_SurfaceCapabilities.currentExtent;
+  RECT currentRect;
+  GetClientRect(m_WindowParameters.m_Handle, &currentRect);
+  return VkExtent2D{ static_cast<uint32_t>(currentRect.right - currentRect.left),
+                     static_cast<uint32_t>(currentRect.bottom - currentRect.top) };
 }
 
 VkImageUsageFlags VulkanApp::GetSwapchainUsageFlags() const
@@ -797,6 +804,7 @@ bool VulkanApp::CreateSwapchain()
     return false;
   }
 
+
   std::vector<VkSurfaceFormatKHR> supportedSurfaceFormats{};
   if (!GetSupportedSurfaceFormats(
         m_VulkanParameters.m_PhysicalDevice, m_VulkanParameters.m_PresentSurface, &supportedSurfaceFormats)) {
@@ -846,31 +854,39 @@ bool VulkanApp::CreateSwapchain()
                 << "\tPresentation mode: " << desiredPresentationMode << std::endl;
 #endif
 
-  VkSwapchainCreateInfoKHR swapchainCreateInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-                                                   nullptr,
-                                                   0,
-                                                   m_VulkanParameters.m_PresentSurface,
-                                                   desiredImageCount,
-                                                   desiredImageFormat.format,
-                                                   desiredImageFormat.colorSpace,
-                                                   desiredImageExtent.width,
-                                                   desiredImageExtent.height,
-                                                   1,
-                                                   desiredSwapchainUsageFlags,
-                                                   VK_SHARING_MODE_EXCLUSIVE,
-                                                   0,
-                                                   nullptr,
-                                                   desiredSwapchainTransform,
-                                                   VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-                                                   desiredPresentationMode,
-                                                   VK_TRUE,
-                                                   m_VulkanParameters.m_Swapchain.m_Handle };
+  // NOTE: There is a race condition here. If the OS changes the window size between the calls to
+  // vkGetPhysicalDeviceSurfaceCapabilitiesKHR() and to vkCreateSwapchainKHR() the currentExtent will be invalid.
+  // Either disable rendering between WM_ENTERSIZEMOVE and WM_EXITSIZEMOVE or live with this condition - not sure if
+  // there is anything else we could do.
+  VkSurfaceCapabilitiesKHR caps;
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+    m_VulkanParameters.m_PhysicalDevice, m_VulkanParameters.m_PresentSurface, &caps);
+  uint32_t width = std::clamp(desiredImageExtent.width, caps.minImageExtent.width, caps.maxImageExtent.width);
+  uint32_t height = std::clamp(desiredImageExtent.height, caps.minImageExtent.height, caps.maxImageExtent.height);
+
+  VkSwapchainCreateInfoKHR swapchainCreateInfo = {
+    VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, // VkStructureType                  sType;
+    nullptr,                                     // const void*                      pNext;
+    0,                                           // VkSwapchainCreateFlagsKHR        flags;
+    m_VulkanParameters.m_PresentSurface,         // VkSurfaceKHR                     surface;
+    desiredImageCount,                           // uint32_t                         minImageCount;
+    desiredImageFormat.format,                   // VkFormat                         imageFormat;
+    desiredImageFormat.colorSpace,               // VkColorSpaceKHR                  imageColorSpace;
+    { width, height },                           // VkExtent2D                       imageExtent;
+    1,                                           // uint32_t                         imageArrayLayers;
+    desiredSwapchainUsageFlags,                  // VkImageUsageFlags                imageUsage;
+    VK_SHARING_MODE_EXCLUSIVE,                   // VkSharingMode                    imageSharingMode;
+    0,                                           // uint32_t                         queueFamilyIndexCount;
+    nullptr,                                     // const uint32_t*                  pQueueFamilyIndices;
+    desiredSwapchainTransform,                   // VkSurfaceTransformFlagBitsKHR    preTransform;
+    VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,           // VkCompositeAlphaFlagBitsKHR      compositeAlpha;
+    desiredPresentationMode,                     // VkPresentModeKHR                 presentMode;
+    VK_TRUE,                                     // VkBool32                         clipped;
+    m_VulkanParameters.m_Swapchain.m_Handle      // VkSwapchainKHR                   oldSwapchain;
+  };
 
   VkResult result = vkCreateSwapchainKHR(
     m_VulkanParameters.m_Device, &swapchainCreateInfo, nullptr, &m_VulkanParameters.m_Swapchain.m_Handle);
-
-  m_VulkanParameters.m_Swapchain.m_Format = desiredImageFormat.format;
-  m_VulkanParameters.m_Swapchain.m_ImageExtent = desiredImageExtent;
 
   if (result != VK_SUCCESS) {
     std::cerr << "Could not create the swap chain: " << result << std::endl;
@@ -902,6 +918,9 @@ bool VulkanApp::CreateSwapchain()
     std::cerr << "Could not create swapchain images" << std::endl;
     return false;
   }
+
+  m_VulkanParameters.m_Swapchain.m_Format = desiredImageFormat.format;
+  m_VulkanParameters.m_Swapchain.m_ImageExtent = { width, height };
 
   return true;
 }

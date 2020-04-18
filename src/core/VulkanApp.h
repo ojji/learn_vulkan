@@ -8,10 +8,6 @@
 #include "core/VulkanDeleter.h"
 #include "os/TypeDefs.h"
 
-namespace Os {
-struct WindowParameters;
-}
-
 namespace Core {
 struct SwapchainData
 {
@@ -76,7 +72,7 @@ private:
                                               std::vector<VkExtensionProperties>* layerExtensions) const;
   [[nodiscard]] bool LoadInstanceLevelFunctions() const;
   bool CreateInstance(std::vector<char const*> const& requiredExtensions);
-  bool CreatePresentationSurface(Os::WindowParameters windowParameters);
+  bool CreatePresentationSurface();
   [[nodiscard]] bool GetVulkanDeviceExtensions(VkPhysicalDevice physicalDevice,
                                                std::vector<VkExtensionProperties>* deviceExtensions) const;
   [[nodiscard]] bool RequiredDeviceExtensionsAvailable(VkPhysicalDevice physicalDevice,
@@ -122,6 +118,8 @@ protected:
   Os::LibraryHandle m_VulkanLoaderHandle;
   VulkanParameters m_VulkanParameters;
   std::ostream& m_DebugOutput;
+  private:
+  Os::WindowParameters m_WindowParameters;
 };
 } // namespace Core
 

@@ -39,7 +39,7 @@ bool Window::Create(wchar_t const windowTitle[])
   wc.cbClsExtra = 0;
   wc.cbWndExtra = 0;
   wc.hIcon = nullptr;
-  wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+  wc.hbrBackground = 0;
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
   wc.style = CS_HREDRAW | CS_VREDRAW;
   wc.hIconSm = nullptr;
