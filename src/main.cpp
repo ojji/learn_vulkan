@@ -7,13 +7,15 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#include <tchar.h>
+#include <functional>
 
 class Sample : public Core::VulkanApp
 {
 public:
   Sample(std::ostream& debugStream) :
     VulkanApp(debugStream, true),
-    m_Window(Os::Window(*this)),
+    m_Window(),
     m_RenderFinishedFence(nullptr)
   {}
 
@@ -36,7 +38,7 @@ public:
 
   bool Initialize()
   {
-    if (!m_Window.Create(L"Hello Vulkan!")) {
+    if (!m_Window.Create(_T("Hello Vulkan!"))) {
       return false;
     }
 
@@ -55,7 +57,42 @@ public:
     return true;
   }
 
-  [[nodiscard]] bool StartMainLoop() const { return m_Window.RenderLoop(); }
+  static DWORD WINAPI RenderLoop(LPVOID param)
+  {
+    Sample* app = reinterpret_cast<Sample*>(param);
+    while (app->m_IsRunning) {
+      // Draw here if you can
+      if (app->CanRender()) {
+        if (!app->Render()) {
+          PostQuitMessage(0);
+        }
+      }
+    }
+    return 0;
+  }
+
+  void OnWindowClose(Os::Window* window) {
+    UNREFERENCED_PARAMETER(window);
+    m_IsRunning = false;
+  }
+
+  [[nodiscard]] bool StartMainLoop()
+  {
+    auto wrapper = std::bind(&Sample::OnWindowClose, this, std::placeholders::_1);
+    m_Window.SetOnWindowClose(wrapper);
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    HANDLE renderThread = CreateThread(NULL, 0, Sample::RenderLoop, reinterpret_cast<void*>(this), 0, NULL);
+    m_IsRunning = true;
+
+    while (m_IsRunning) {
+      m_Window.PollEvents();
+      _mm_pause();
+    }
+
+    WaitForSingleObject(renderThread, INFINITE);
+    return true;
+#endif
+  }
 
   bool Render() override
   {
@@ -101,14 +138,10 @@ public:
       return false;
     }
 
-    VkPresentInfoKHR presentInfo = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-                                     nullptr,
-                                     1,
-                                     &m_RenderFinishedSemaphore,
-                                     1,
-                                     &m_VulkanParameters.m_Swapchain.m_Handle,
-                                     &acquiredImageIdx,
-                                     nullptr };
+    VkPresentInfoKHR presentInfo = {
+      VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,       nullptr,           1,      &m_RenderFinishedSemaphore, 1,
+      &m_VulkanParameters.m_Swapchain.m_Handle, &acquiredImageIdx, nullptr
+    };
 
     result = Core::vkQueuePresentKHR(m_VulkanParameters.m_Queue, &presentInfo);
     switch (result) {
@@ -177,6 +210,7 @@ private:
   VkFence m_RenderFinishedFence;
   VkSemaphore m_NextImageAvailableSemaphore;
   VkSemaphore m_RenderFinishedSemaphore;
+  volatile bool m_IsRunning;
 };
 
 int main()

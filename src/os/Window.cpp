@@ -4,7 +4,7 @@
 #include <thread>
 
 namespace Os {
-Window::Window(Core::VulkanApp& vulkanApp) : m_WindowParameters(WindowParameters()), m_VulkanApp(vulkanApp)
+Window::Window() : m_WindowParameters(WindowParameters())
 {}
 
 Window::~Window()
@@ -16,6 +16,17 @@ Window::~Window()
 constexpr wchar_t WINDOW_CLASS_NAME[] = L"Learn_Vulkan";
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+  Window* window = reinterpret_cast<Window*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+  if (!window) {
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+  }
+
+  return window->HandleMessage(hwnd, uMsg, wParam, lParam);
+}
+#endif
+
+LRESULT Window::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
   switch (uMsg) {
   case WM_DESTROY: {
     PostQuitMessage(0);
@@ -25,9 +36,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
   }
 }
-#endif
 
-bool Window::Create(wchar_t const windowTitle[])
+bool Window::Create(TCHAR const windowTitle[])
 {
 #ifdef VK_USE_PLATFORM_WIN32_KHR
   m_WindowParameters.m_Instance = GetModuleHandle(nullptr);
@@ -66,44 +76,42 @@ bool Window::Create(wchar_t const windowTitle[])
     return false;
   }
 
+  SetWindowLongPtr(m_WindowParameters.m_Handle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+  ShowWindow(m_WindowParameters.m_Handle, SW_SHOWNORMAL);
+  UpdateWindow(m_WindowParameters.m_Handle);
+
   return true;
 #endif
 }
 
-bool Window::RenderLoop() const
+void Window::PollEvents()
 {
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-  ShowWindow(m_WindowParameters.m_Handle, SW_SHOWNORMAL);
-  UpdateWindow(m_WindowParameters.m_Handle);
-
-  MSG msg{};
-  volatile bool isRunning = true;
-
-  while (isRunning) {
-    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-      switch (msg.message) {
-      case WM_QUIT: {
-        isRunning = false;
-      } break;
-      }
-      TranslateMessage(&msg);
-      DispatchMessage(&msg);
+  MSG msg;
+  while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+    switch (msg.message) {
+    case WM_QUIT: {
+      OnWindowClose(this);
+    } break;
     }
-    // Draw here if you can
-    if (m_VulkanApp.CanRender()) {
-      if (!m_VulkanApp.Render()) {
-        PostQuitMessage(0);
-      }
-    } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
   }
-  return true;
-#endif
+}
+
+void Window::SetOnWindowClose(std::function<OnWindowCloseCallback> callback)
+{
+  m_OnWindowClose = callback;
 }
 
 WindowParameters Window::GetWindowParameters() const
 {
   return m_WindowParameters;
+}
+
+void Window::OnWindowClose(Window* window)
+{
+  if (m_OnWindowClose) {
+    m_OnWindowClose(window);
+  }
 }
 } // namespace Os
