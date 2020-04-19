@@ -1070,39 +1070,47 @@ bool VulkanApp::RecordCommandBuffers()
 
 bool VulkanApp::CreateRenderPass()
 {
-  std::vector<VkAttachmentDescription> attachments = { VkAttachmentDescription{ 0,
-                                                                                m_VulkanParameters.m_Swapchain.m_Format,
-                                                                                VK_SAMPLE_COUNT_1_BIT,
-                                                                                VK_ATTACHMENT_LOAD_OP_CLEAR,
-                                                                                VK_ATTACHMENT_STORE_OP_STORE,
-                                                                                VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-                                                                                VK_ATTACHMENT_STORE_OP_DONT_CARE,
-                                                                                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                                                                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR } };
+  std::vector<VkAttachmentDescription> attachments = { VkAttachmentDescription{
+    0,                                       // VkAttachmentDescriptionFlags    flags;
+    m_VulkanParameters.m_Swapchain.m_Format, // VkFormat                        format;
+    VK_SAMPLE_COUNT_1_BIT,                   // VkSampleCountFlagBits           samples;
+    VK_ATTACHMENT_LOAD_OP_CLEAR,             // VkAttachmentLoadOp              loadOp;
+    VK_ATTACHMENT_STORE_OP_STORE,            // VkAttachmentStoreOp             storeOp;
+    VK_ATTACHMENT_LOAD_OP_DONT_CARE,         // VkAttachmentLoadOp              stencilLoadOp;
+    VK_ATTACHMENT_STORE_OP_DONT_CARE,        // VkAttachmentStoreOp             stencilStoreOp;
+    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,         // VkImageLayout                   initialLayout;
+    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR          // VkImageLayout                   finalLayout;
+  } };
 
   std::vector<VkAttachmentReference> colorAttachments = { VkAttachmentReference{
-    0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL } };
+    0,                                       // uint32_t         attachment;
+    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL // VkImageLayout    layout;
+  } };
 
-  std::vector<VkSubpassDescription> subpasses = { VkSubpassDescription{ 0,
-                                                                        VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                                        0,
-                                                                        nullptr,
-                                                                        static_cast<uint32_t>(colorAttachments.size()),
-                                                                        colorAttachments.data(),
-                                                                        nullptr,
-                                                                        nullptr,
-                                                                        0,
-                                                                        nullptr } };
+  std::vector<VkSubpassDescription> subpasses = { VkSubpassDescription{
+    0,                                              // VkSubpassDescriptionFlags       flags;
+    VK_PIPELINE_BIND_POINT_GRAPHICS,                // VkPipelineBindPoint             pipelineBindPoint;
+    0,                                              // uint32_t                        inputAttachmentCount;
+    nullptr,                                        // const VkAttachmentReference*    pInputAttachments;
+    static_cast<uint32_t>(colorAttachments.size()), // uint32_t                        colorAttachmentCount;
+    colorAttachments.data(),                        // const VkAttachmentReference*    pColorAttachments;
+    nullptr,                                        // const VkAttachmentReference*    pResolveAttachments;
+    nullptr,                                        // const VkAttachmentReference*    pDepthStencilAttachment;
+    0,                                              // uint32_t                        preserveAttachmentCount;
+    nullptr                                         // const uint32_t*                 pPreserveAttachments;
+  } };
 
-  VkRenderPassCreateInfo renderPassCreateInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-                                                  nullptr,
-                                                  0,
-                                                  static_cast<uint32_t>(attachments.size()),
-                                                  attachments.data(),
-                                                  static_cast<uint32_t>(subpasses.size()),
-                                                  subpasses.data(),
-                                                  0,
-                                                  nullptr };
+  VkRenderPassCreateInfo renderPassCreateInfo = {
+    VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, // VkStructureType                   sType;
+    nullptr,                                   // const void*                       pNext;
+    0,                                         // VkRenderPassCreateFlags           flags;
+    static_cast<uint32_t>(attachments.size()), // uint32_t                          attachmentCount;
+    attachments.data(),                        // const VkAttachmentDescription*    pAttachments;
+    static_cast<uint32_t>(subpasses.size()),   // uint32_t                          subpassCount;
+    subpasses.data(),                          // const VkSubpassDescription*       pSubpasses;
+    0,                                         // uint32_t                          dependencyCount;
+    nullptr                                    // const VkSubpassDependency*        pDependencies;
+  };
 
   VkResult const result =
     vkCreateRenderPass(m_VulkanParameters.m_Device, &renderPassCreateInfo, nullptr, &m_VulkanParameters.m_RenderPass);
