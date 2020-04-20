@@ -9,18 +9,33 @@
 #include "os/TypeDefs.h"
 
 namespace Core {
+struct FrameResource {
+  VkFence m_Fence;
+  VkFramebuffer m_Framebuffer;
+  VkSemaphore m_PresentToDrawSemaphore;
+  VkSemaphore m_DrawToPresentSemaphore;
+  VkCommandBuffer m_CommandBuffer;
+};
+
 struct SwapchainData
 {
   VkSwapchainKHR m_Handle;
   VkFormat m_Format;
   std::vector<VkImage> m_Images;
+  std::vector<VkImageView> m_ImageViews;
   VkExtent2D m_ImageExtent;
 };
 
-struct FrameBufferObjects
+struct VertexData
 {
-  VkFramebuffer m_Framebuffer;
-  VkImageView m_ImageView;
+  float m_Position[4];
+  float m_Color[4];
+};
+
+struct VertexBuffer
+{
+  VkDeviceMemory m_Memory;
+  VkBuffer m_Handle;
 };
 
 struct VulkanParameters
@@ -35,10 +50,8 @@ struct VulkanParameters
   VkSurfaceCapabilitiesKHR m_SurfaceCapabilities;
   SwapchainData m_Swapchain;
   VkCommandPool m_PresentCommandPool;
-  std::vector<VkCommandBuffer> m_PresentCommandBuffers;
   bool m_VsyncEnabled;
   VkRenderPass m_RenderPass;
-  std::vector<FrameBufferObjects> m_FramebufferObjects;
   VkPipeline m_Pipeline;
   VulkanParameters();
 };
@@ -54,7 +67,7 @@ public:
   VulkanApp& operator=(VulkanApp&& other) = default;
   virtual ~VulkanApp();
 
-  [[nodiscard]] virtual bool CanRender() const { return false; }
+  [[nodiscard]] bool CanRender() const { return m_CanRender; }
   virtual bool Render() = 0;
 
   bool PrepareVulkan(Os::WindowParameters windowParameters);
@@ -98,27 +111,36 @@ private:
     std::vector<enum VkPresentModeKHR> const& supportedPresentationModes) const;
 
   bool CreateQueue();
-  bool CreateSwapchain();
 
-  void FreeSwapchainAndRenderResources();
-  bool CreateCommandBuffers();
-  bool RecordCommandBuffersAlt();
-  bool RecordCommandBuffers();
-  bool CreateRenderPass();
-  bool CreateFramebuffers();
   VulkanDeleter<VkShaderModule, PFN_vkDestroyShaderModule> CreateShaderModule(char const* filename);
   VulkanDeleter<VkPipelineLayout, PFN_vkDestroyPipelineLayout> CreatePipelineLayout();
   static std::vector<char> VulkanApp::ReadShaderContent(char const* filename);
+  bool AllocateCommandBuffer(FrameResource& frameResource);
+  bool AllocateVertexBuffer(VertexBuffer& vertexBuffer);
+  bool AllocateBufferMemory(VkBuffer buffer, VkDeviceMemory* memory);
+
+  bool CreateSemaphores(FrameResource &frameResource);
+  bool CreateFence(FrameResource &frameResource);
 
 protected:
+  bool CreateCommandPool();
+  bool CreateSwapchain();
+  bool CreateSwapchainImageViews();
+  bool CreateRenderPass();
   bool CreatePipeline();
-  bool CreateSwapchainAndRenderResources();
-  bool RecreateSwapchainAndRenderResources();
+
+  bool CreateVertexBuffer(std::vector<VertexData> const& vertexData, VertexBuffer& buffer);
+  void FreeVertexBuffer(VertexBuffer& vertexBuffer);
+  bool CreateFrameResources(uint32_t resourceCount, std::vector<FrameResource> &resources);
+  void FreeFrameResource(FrameResource& frameResource);
+  bool RecreateSwapchain();
 
   Os::LibraryHandle m_VulkanLoaderHandle;
   VulkanParameters m_VulkanParameters;
   std::ostream& m_DebugOutput;
-  private:
+  volatile bool m_CanRender;
+
+private:
   Os::WindowParameters m_WindowParameters;
 };
 } // namespace Core

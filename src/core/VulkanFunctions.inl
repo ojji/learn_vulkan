@@ -27,6 +27,7 @@ VK_INSTANCE_FUNCTION(vkEnumerateDeviceExtensionProperties)
 VK_INSTANCE_FUNCTION(vkGetPhysicalDeviceProperties2)
 VK_INSTANCE_FUNCTION(vkGetPhysicalDeviceFeatures2)
 VK_INSTANCE_FUNCTION(vkGetPhysicalDeviceQueueFamilyProperties2)
+VK_INSTANCE_FUNCTION(vkGetPhysicalDeviceMemoryProperties)
 VK_INSTANCE_FUNCTION(vkCreateDevice)
 VK_INSTANCE_FUNCTION(vkGetDeviceProcAddr)
 VK_INSTANCE_FUNCTION(vkDestroyInstance)
@@ -81,11 +82,15 @@ VK_DEVICE_FUNCTION(vkDestroyFence)
 // Draw commands
 VK_DEVICE_FUNCTION(vkCmdClearColorImage)
 
-// Render pass and frame buffers
+// Render pass and buffers
 VK_DEVICE_FUNCTION(vkCreateRenderPass)
 VK_DEVICE_FUNCTION(vkDestroyRenderPass)
 VK_DEVICE_FUNCTION(vkCreateFramebuffer)
 VK_DEVICE_FUNCTION(vkDestroyFramebuffer)
+VK_DEVICE_FUNCTION(vkCreateBuffer)
+VK_DEVICE_FUNCTION(vkGetBufferMemoryRequirements)
+VK_DEVICE_FUNCTION(vkBindBufferMemory)
+VK_DEVICE_FUNCTION(vkDestroyBuffer)
 VK_DEVICE_FUNCTION(vkCreateImageView)
 VK_DEVICE_FUNCTION(vkDestroyImageView)
 VK_DEVICE_FUNCTION(vkCmdBeginRenderPass)
@@ -101,9 +106,21 @@ VK_DEVICE_FUNCTION(vkDestroyPipeline)
 VK_DEVICE_FUNCTION(vkCreatePipelineLayout)
 VK_DEVICE_FUNCTION(vkDestroyPipelineLayout)
 VK_DEVICE_FUNCTION(vkCmdBindPipeline)
+VK_DEVICE_FUNCTION(vkCmdBindVertexBuffers)
 
 // Draw
 VK_DEVICE_FUNCTION(vkCmdDraw)
+
+// Memory
+VK_DEVICE_FUNCTION(vkAllocateMemory)
+VK_DEVICE_FUNCTION(vkMapMemory)
+VK_DEVICE_FUNCTION(vkUnmapMemory)
+VK_DEVICE_FUNCTION(vkFreeMemory)
+VK_DEVICE_FUNCTION(vkFlushMappedMemoryRanges)
+
+// Fixed-Function Vertex Post-Processing
+VK_DEVICE_FUNCTION(vkCmdSetScissor)
+VK_DEVICE_FUNCTION(vkCmdSetViewport)
 
 #undef VK_DEVICE_FUNCTION
 

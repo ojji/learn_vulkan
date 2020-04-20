@@ -1,8 +1,10 @@
 #version 460
 
-layout(location = 0) out vec4 diffuseColor;
+layout(location = 0) in vec4 v_Color;
+
+layout(location = 0) out vec4 o_Color;
 
 void main()
 {
-  diffuseColor = vec4((201.0f / 255.0f), (197.0f / 255.0f), (148.0f / 255.0f), 1.0);
+  o_Color = v_Color;
 }

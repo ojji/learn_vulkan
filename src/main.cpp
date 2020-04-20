@@ -2,37 +2,26 @@
 #include "core/VulkanFunctions.h"
 #include "os/Common.h"
 #include "os/Window.h"
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
-#include <thread>
-#include <tchar.h>
 #include <functional>
+#include <iostream>
+#include <tchar.h>
+#include <thread>
 
 class Sample : public Core::VulkanApp
 {
 public:
-  Sample(std::ostream& debugStream) :
-    VulkanApp(debugStream, true),
-    m_Window(),
-    m_RenderFinishedFence(nullptr)
-  {}
+  Sample(std::ostream& debugStream) : VulkanApp(debugStream, true), m_Window(), m_CurrentResourceIdx(0) {}
 
   virtual ~Sample()
   {
     Core::vkDeviceWaitIdle(m_VulkanParameters.m_Device);
-    if (m_NextImageAvailableSemaphore) {
-      Core::vkDestroySemaphore(m_VulkanParameters.m_Device, m_NextImageAvailableSemaphore, nullptr);
-      m_NextImageAvailableSemaphore = nullptr;
-    }
-    if (m_RenderFinishedSemaphore) {
-      Core::vkDestroySemaphore(m_VulkanParameters.m_Device, m_RenderFinishedSemaphore, nullptr);
-      m_RenderFinishedSemaphore = nullptr;
-    }
-    if (m_RenderFinishedFence) {
-      Core::vkDestroyFence(m_VulkanParameters.m_Device, m_RenderFinishedFence, nullptr);
-      m_RenderFinishedFence = nullptr;
+    FreeVertexBuffer(m_VertexBuffer);
+    for (uint32_t i = 0; i != m_FrameResources.size(); ++i) {
+      FreeFrameResource(m_FrameResources[i]);
     }
   }
 
@@ -46,11 +35,34 @@ public:
       return false;
     }
 
-    if (!CreateSwapchainAndRenderResources()) {
+    if (!CreateCommandPool()) {
       return false;
     }
 
-    if (!CreateSemaphoresAndFences()) {
+    if (!CreateSwapchain()) {
+      return false;
+    }
+
+    if (!CreateRenderPass()) {
+      return false;
+    }
+
+    if (!CreatePipeline()) {
+      return false;
+    }
+
+    if (!CreateFrameResources(3, m_FrameResources)) {
+      return false;
+    }
+
+    std::vector<Core::VertexData> vertices = {
+      Core::VertexData{ { -0.7f, 0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+      Core::VertexData{ { 0.7f, 0.7f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+      Core::VertexData{ { -0.7f, -0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f, 1.0f, 1.0f } },
+      Core::VertexData{ { 0.7f, -0.7f, 0.0f, 1.0f }, { 0.3f, 0.3f, 0.3f, 1.0f } }
+    };
+
+    if (!CreateVertexBuffer(vertices, m_VertexBuffer)) {
       return false;
     }
 
@@ -71,7 +83,8 @@ public:
     return 0;
   }
 
-  void OnWindowClose(Os::Window* window) {
+  void OnWindowClose(Os::Window* window)
+  {
     UNREFERENCED_PARAMETER(window);
     m_IsRunning = false;
   }
@@ -96,13 +109,24 @@ public:
 
   bool Render() override
   {
+    uint32_t currentResourceIdx = (InterlockedIncrement(&m_CurrentResourceIdx) - 1) % 3;
+    VkResult result = Core::vkWaitForFences(m_VulkanParameters.m_Device,
+                                            1,
+                                            &m_FrameResources[currentResourceIdx].m_Fence,
+                                            VK_FALSE,
+                                            std::numeric_limits<uint64_t>::max());
+    if (result != VK_SUCCESS) {
+      std::cerr << "Wait on fence timed out" << std::endl;
+      return false;
+    }
+
     uint32_t acquiredImageIdx;
-    VkResult result = Core::vkAcquireNextImageKHR(m_VulkanParameters.m_Device,
-                                                  m_VulkanParameters.m_Swapchain.m_Handle,
-                                                  UINT64_MAX,
-                                                  m_NextImageAvailableSemaphore,
-                                                  nullptr,
-                                                  &acquiredImageIdx);
+    result = Core::vkAcquireNextImageKHR(m_VulkanParameters.m_Device,
+                                         m_VulkanParameters.m_Swapchain.m_Handle,
+                                         std::numeric_limits<uint64_t>::max(),
+                                         m_FrameResources[currentResourceIdx].m_PresentToDrawSemaphore,
+                                         nullptr,
+                                         &acquiredImageIdx);
 
     switch (result) {
     case VK_SUCCESS:
@@ -113,34 +137,48 @@ public:
       m_DebugOutput << "Swapchain image out of date during acquiring, recreating the swapchain" << std::endl;
 #endif
       Core::vkDeviceWaitIdle(m_VulkanParameters.m_Device);
-      Core::vkResetFences(m_VulkanParameters.m_Device, 1, &m_RenderFinishedFence);
-      return RecreateSwapchainAndRenderResources();
-
+      return RecreateSwapchain();
     default:
       std::cerr << "Render error! (" << result << ")" << std::endl;
       return false;
     }
 
-    VkPipelineStageFlags waitStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                                nullptr,
-                                1,
-                                &m_NextImageAvailableSemaphore,
-                                &waitStageMask,
-                                1,
-                                &m_VulkanParameters.m_PresentCommandBuffers[acquiredImageIdx],
-                                1,
-                                &m_RenderFinishedSemaphore };
+    if (!PrepareAndRecordFrame(m_FrameResources[currentResourceIdx].m_CommandBuffer,
+                               acquiredImageIdx,
+                               m_FrameResources[currentResourceIdx].m_Framebuffer)) {
+      return false;
+    }
 
-    result = Core::vkQueueSubmit(m_VulkanParameters.m_Queue, 1, &submitInfo, m_RenderFinishedFence);
+    VkPipelineStageFlags waitStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    VkSubmitInfo submitInfo = {
+      VK_STRUCTURE_TYPE_SUBMIT_INFO, // VkStructureType                sType;
+      nullptr,                       // const void*                    pNext;
+      1,                             // uint32_t                       waitSemaphoreCount;
+      &m_FrameResources[currentResourceIdx].m_PresentToDrawSemaphore, // const VkSemaphore*             pWaitSemaphores;
+      &waitStageMask,                                        // const VkPipelineStageFlags*    pWaitDstStageMask;
+      1,                                                     // uint32_t                       commandBufferCount;
+      &m_FrameResources[currentResourceIdx].m_CommandBuffer, // const VkCommandBuffer*         pCommandBuffers;
+      1,                                                     // uint32_t                       signalSemaphoreCount;
+      &m_FrameResources[currentResourceIdx].m_DrawToPresentSemaphore // const VkSemaphore* pSignalSemaphores;
+    };
+
+    Core::vkResetFences(m_VulkanParameters.m_Device, 1, &m_FrameResources[currentResourceIdx].m_Fence);
+    result =
+      Core::vkQueueSubmit(m_VulkanParameters.m_Queue, 1, &submitInfo, m_FrameResources[currentResourceIdx].m_Fence);
     if (result != VK_SUCCESS) {
       std::cerr << "Error while submitting commands to the present queue" << std::endl;
       return false;
     }
 
     VkPresentInfoKHR presentInfo = {
-      VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,       nullptr,           1,      &m_RenderFinishedSemaphore, 1,
-      &m_VulkanParameters.m_Swapchain.m_Handle, &acquiredImageIdx, nullptr
+      VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,                             // VkStructureType          sType;
+      nullptr,                                                        // const void*              pNext;
+      1,                                                              // uint32_t                 waitSemaphoreCount;
+      &m_FrameResources[currentResourceIdx].m_DrawToPresentSemaphore, // const VkSemaphore*       pWaitSemaphores;
+      1,                                                              // uint32_t                 swapchainCount;
+      &m_VulkanParameters.m_Swapchain.m_Handle,                       // const VkSwapchainKHR*    pSwapchains;
+      &acquiredImageIdx,                                              // const uint32_t*          pImageIndices;
+      nullptr                                                         // VkResult*                pResults;
     };
 
     result = Core::vkQueuePresentKHR(m_VulkanParameters.m_Queue, &presentInfo);
@@ -153,64 +191,161 @@ public:
       m_DebugOutput << "Swapchain image suboptimal or out of date during presenting, recreating swapchain" << std::endl;
 #endif
       Core::vkDeviceWaitIdle(m_VulkanParameters.m_Device);
-      Core::vkResetFences(m_VulkanParameters.m_Device, 1, &m_RenderFinishedFence);
-      return RecreateSwapchainAndRenderResources();
+      return RecreateSwapchain();
     default:
       std::cerr << "Render error! (" << result << ")" << std::endl;
       return false;
     }
+    return true;
+  }
 
-    result = Core::vkWaitForFences(m_VulkanParameters.m_Device, 1, &m_RenderFinishedFence, VK_TRUE, UINT64_MAX);
-    if (result != VK_SUCCESS) {
-      std::cout << "Fence waiting error" << result << std::endl;
-      return false;
+  bool CreateFramebuffer(VkFramebuffer& framebuffer, VkImageView imageView)
+  {
+    if (framebuffer) {
+      Core::vkDestroyFramebuffer(m_VulkanParameters.m_Device, framebuffer, nullptr);
+      framebuffer = nullptr;
     }
-
-    if (Core::vkResetFences(m_VulkanParameters.m_Device, 1, &m_RenderFinishedFence) != VK_SUCCESS) {
-      std::cout << "Could not reset fence" << result << std::endl;
+    VkFramebufferCreateInfo frameBufferCreateInfo = {
+      VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,           // VkStructureType             sType;
+      nullptr,                                             // const void*                 pNext;
+      0,                                                   // VkFramebufferCreateFlags    flags;
+      m_VulkanParameters.m_RenderPass,                     // VkRenderPass                renderPass;
+      1,                                                   // uint32_t                    attachmentCount;
+      &imageView,                                          // const VkImageView*          pAttachments;
+      m_VulkanParameters.m_Swapchain.m_ImageExtent.width,  // uint32_t                    width;
+      m_VulkanParameters.m_Swapchain.m_ImageExtent.height, // uint32_t                    height;
+      1                                                    // uint32_t                    layers;
+    };
+    VkResult result =
+      Core::vkCreateFramebuffer(m_VulkanParameters.m_Device, &frameBufferCreateInfo, nullptr, &framebuffer);
+    if (result != VK_SUCCESS) {
       return false;
     }
     return true;
   }
 
-  [[nodiscard]] bool CanRender() const override { return true; }
+  bool PrepareAndRecordFrame(VkCommandBuffer commandBuffer, uint32_t acquiredImageIdx, VkFramebuffer& framebuffer)
+  {
+    if (!CreateFramebuffer(framebuffer, m_VulkanParameters.m_Swapchain.m_ImageViews[acquiredImageIdx])) {
+      return false;
+    }
+
+    VkCommandBufferBeginInfo commandBufferBeginInfo = {
+      VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, // VkStructureType                          sType;
+      nullptr,                                     // const void*                              pNext;
+      VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, // VkCommandBufferUsageFlags                flags;
+      nullptr                                      // const VkCommandBufferInheritanceInfo*    pInheritanceInfo;
+    };
+
+    Core::vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+
+    VkImageSubresourceRange subresourceRange = {
+      VkImageAspectFlagBits::VK_IMAGE_ASPECT_COLOR_BIT, // VkImageAspectFlags    aspectMask;
+      0,                                                // uint32_t              baseMipLevel;
+      1,                                                // uint32_t              levelCount;
+      0,                                                // uint32_t              baseArrayLayer;
+      1                                                 // uint32_t              layerCount;
+    };
+
+    VkImageMemoryBarrier fromPresentToDrawBarrier = {
+      VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,                    // VkStructureType            sType;
+      nullptr,                                                   // const void*                pNext;
+      VK_ACCESS_MEMORY_READ_BIT,                                 // VkAccessFlags              srcAccessMask;
+      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,                      // VkAccessFlags              dstAccessMask;
+      VK_IMAGE_LAYOUT_UNDEFINED,                                 // VkImageLayout              oldLayout;
+      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,                           // VkImageLayout              newLayout;
+      m_VulkanParameters.m_PresentQueueFamilyIdx,                // uint32_t                   srcQueueFamilyIndex;
+      m_VulkanParameters.m_PresentQueueFamilyIdx,                // uint32_t                   dstQueueFamilyIndex;
+      m_VulkanParameters.m_Swapchain.m_Images[acquiredImageIdx], // VkImage                    image;
+      subresourceRange                                           // VkImageSubresourceRange    subresourceRange;
+    };
+
+    Core::vkCmdPipelineBarrier(commandBuffer,
+                               VkPipelineStageFlagBits::VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                               VkPipelineStageFlagBits::VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                               0,
+                               0,
+                               nullptr,
+                               0,
+                               nullptr,
+                               1,
+                               &fromPresentToDrawBarrier);
+
+    VkClearValue clearValue = { { (85.0f / 255.0f), (87.0f / 255.0f), (112.0f / 255.0f), 0.0f } };
+    VkRenderPassBeginInfo renderPassBeginInfo = {
+      VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, // VkStructureType        sType;
+      nullptr,                                  // const void*            pNext;
+      m_VulkanParameters.m_RenderPass,          // VkRenderPass           renderPass;
+      framebuffer,                              // VkFramebuffer          framebuffer;
+      { { 0, 0 },
+        { m_VulkanParameters.m_Swapchain.m_ImageExtent.width,
+          m_VulkanParameters.m_Swapchain.m_ImageExtent.height } }, // VkRect2D               renderArea;
+      1,                                                           // uint32_t               clearValueCount;
+      &clearValue                                                  // const VkClearValue*    pClearValues;
+    };
+
+    Core::vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VkSubpassContents::VK_SUBPASS_CONTENTS_INLINE);
+    Core::vkCmdBindPipeline(
+      commandBuffer, VkPipelineBindPoint::VK_PIPELINE_BIND_POINT_GRAPHICS, m_VulkanParameters.m_Pipeline);
+
+    VkViewport viewPort = {
+      0.0f,                                                                    // float    x;
+      0.0f,                                                                    // float    y;
+      static_cast<float>(m_VulkanParameters.m_Swapchain.m_ImageExtent.width),  // float    width;
+      static_cast<float>(m_VulkanParameters.m_Swapchain.m_ImageExtent.height), // float    height;
+      0.0f,                                                                    // float    minDepth;
+      1.0f                                                                     // float    maxDepth;
+    };
+
+    Core::vkCmdSetViewport(commandBuffer, 0, 1, &viewPort);
+
+    VkRect2D scissor = {
+      { 0, 0 }, // VkOffset2D    offset;
+      { m_VulkanParameters.m_Swapchain.m_ImageExtent.width,
+        m_VulkanParameters.m_Swapchain.m_ImageExtent.height } // VkExtent2D    extent;
+    };
+    Core::vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    VkDeviceSize offset = 0;
+    Core::vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_VertexBuffer.m_Handle, &offset);
+    Core::vkCmdDraw(commandBuffer, 4, 1, 0, 0);
+
+    Core::vkCmdEndRenderPass(commandBuffer);
+
+    VkImageMemoryBarrier fromDrawToPresentBarrier = {
+      VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,                    // VkStructureType            sType;
+      nullptr,                                                   // const void*                pNext;
+      VkAccessFlagBits::VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,    // VkAccessFlags              srcAccessMask;
+      VkAccessFlagBits::VK_ACCESS_MEMORY_READ_BIT,               // VkAccessFlags              dstAccessMask;
+      VkImageLayout::VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,            // VkImageLayout              oldLayout;
+      VkImageLayout::VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,            // VkImageLayout              newLayout;
+      m_VulkanParameters.m_PresentQueueFamilyIdx,                // uint32_t                   srcQueueFamilyIndex;
+      m_VulkanParameters.m_PresentQueueFamilyIdx,                // uint32_t                   dstQueueFamilyIndex;
+      m_VulkanParameters.m_Swapchain.m_Images[acquiredImageIdx], // VkImage                    image;
+      subresourceRange                                           // VkImageSubresourceRange    subresourceRange;
+    };
+
+    Core::vkCmdPipelineBarrier(commandBuffer,
+                               VkPipelineStageFlagBits::VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                               VkPipelineStageFlagBits::VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                               0,
+                               0,
+                               nullptr,
+                               0,
+                               nullptr,
+                               1,
+                               &fromDrawToPresentBarrier);
+
+    Core::vkEndCommandBuffer(commandBuffer);
+    return true;
+  }
 
 private:
-  bool CreateSemaphoresAndFences()
-  {
-    VkFenceCreateInfo fenceCreateInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, 0 };
-
-    VkResult result =
-      Core::vkCreateFence(m_VulkanParameters.m_Device, &fenceCreateInfo, nullptr, &m_RenderFinishedFence);
-
-    if (result != VK_SUCCESS) {
-      std::cerr << "Could not create the fence!" << result << std::endl;
-      return false;
-    }
-
-    VkSemaphoreCreateInfo semaphoreCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0 };
-
-    result = Core::vkCreateSemaphore(
-      m_VulkanParameters.m_Device, &semaphoreCreateInfo, nullptr, &m_NextImageAvailableSemaphore);
-    if (result != VK_SUCCESS) {
-      std::cerr << "Could not create the semaphore for the next image available: " << result << std::endl;
-      return false;
-    }
-
-    result =
-      Core::vkCreateSemaphore(m_VulkanParameters.m_Device, &semaphoreCreateInfo, nullptr, &m_RenderFinishedSemaphore);
-    if (result != VK_SUCCESS) {
-      std::cerr << "Could not create the semaphore for the next image available: " << result << std::endl;
-      return false;
-    }
-    return true;
-  }
-
   Os::Window m_Window;
-  VkFence m_RenderFinishedFence;
-  VkSemaphore m_NextImageAvailableSemaphore;
-  VkSemaphore m_RenderFinishedSemaphore;
+  Core::VertexBuffer m_VertexBuffer;
   volatile bool m_IsRunning;
+  std::vector<Core::FrameResource> m_FrameResources;
+  volatile uint32_t m_CurrentResourceIdx;
 };
 
 int main()
