@@ -41,3 +41,7 @@ CMakeSettings.json
 #visual studio cache
 .vs/
 .vscode/
+
+# compiled shaders
+*.spv
+*.spv.debug
