@@ -122,6 +122,16 @@ VK_DEVICE_FUNCTION(vkFlushMappedMemoryRanges)
 VK_DEVICE_FUNCTION(vkCmdSetScissor)
 VK_DEVICE_FUNCTION(vkCmdSetViewport)
 
+// Queries
+VK_DEVICE_FUNCTION(vkCreateQueryPool)
+VK_DEVICE_FUNCTION(vkCmdResetQueryPool)
+VK_DEVICE_FUNCTION(vkGetQueryPoolResults)
+VK_DEVICE_FUNCTION(vkCmdWriteTimestamp)
+VK_DEVICE_FUNCTION(vkDestroyQueryPool)
+
+// Copy commands
+VK_DEVICE_FUNCTION(vkCmdCopyBuffer)
+
 #undef VK_DEVICE_FUNCTION
 
 #ifndef VK_EXPAND_VERSION

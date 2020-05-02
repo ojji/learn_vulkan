@@ -1,15 +1,31 @@
-#ifndef CORE_VULKANAPP_H
-#define CORE_VULKANAPP_H
+#ifndef CORE_VULKANRENDERER_H
+#define CORE_VULKANRENDERER_H
 
 #include <ostream>
 #include <vector>
 #include <vulkan/vulkan.h>
 
 #include "core/VulkanDeleter.h"
-#include "os/TypeDefs.h"
+#include "os/Typedefs.h"
+#include "os/Window.h"
 
 namespace Core {
-struct FrameResource {
+
+struct FrameStat
+{
+  uint64_t m_BeginFrameTimestamp;
+  uint64_t m_EndFrameTimestamp;
+};
+
+struct ImageData
+{
+  VkImageView m_ImageView;
+  uint32_t m_ImageWidth;
+  uint32_t m_ImageHeight;
+};
+
+struct FrameResource
+{
   VkFence m_Fence;
   VkFramebuffer m_Framebuffer;
   VkSemaphore m_PresentToDrawSemaphore;
@@ -32,8 +48,9 @@ struct VertexData
   float m_Color[4];
 };
 
-struct VertexBuffer
+struct BufferData
 {
+  VkDeviceSize m_Size;
   VkDeviceMemory m_Memory;
   VkBuffer m_Handle;
 };
@@ -43,34 +60,52 @@ struct VulkanParameters
   typedef uint32_t QueueFamilyIdx;
   VkInstance m_Instance;
   VkPhysicalDevice m_PhysicalDevice;
-  QueueFamilyIdx m_PresentQueueFamilyIdx;
   VkDevice m_Device;
-  VkQueue m_Queue;
+  VkQueue m_GraphicsQueue;
+  VkQueue m_TransferQueue;
+  QueueFamilyIdx m_GraphicsQueueFamilyIdx;
+  QueueFamilyIdx m_TransferQueueFamilyIdx;
   VkSurfaceKHR m_PresentSurface;
   VkSurfaceCapabilitiesKHR m_SurfaceCapabilities;
   SwapchainData m_Swapchain;
-  VkCommandPool m_PresentCommandPool;
+  VkCommandPool m_GraphicsCommandPool;
+  VkCommandPool m_TransferCommandPool;
+  VkCommandBuffer m_TransferCommandBuffer;
   bool m_VsyncEnabled;
   VkRenderPass m_RenderPass;
   VkPipeline m_Pipeline;
+  VkQueryPool m_QueryPool;
+  float m_TimestampPeriod;
   VulkanParameters();
 };
 
-class VulkanApp
+class VulkanRenderer
 {
 public:
-  VulkanApp(bool vsyncEnabled = false);
-  VulkanApp(std::ostream& debugOutput, bool vsyncEnabled = false);
-  VulkanApp(VulkanApp const& other) = default;
-  VulkanApp(VulkanApp&& other) = default;
-  VulkanApp& operator=(VulkanApp const& other) = default;
-  VulkanApp& operator=(VulkanApp&& other) = default;
-  virtual ~VulkanApp();
+  typedef bool(OnRenderFrameCallback)(VkCommandBuffer& commandBuffer, VkFramebuffer& framebuffer, ImageData& imageData);
+  VulkanRenderer(bool vsyncEnabled = false, uint32_t frameResourcesCount = 3);
+  VulkanRenderer(std::ostream& debugOutput, bool vsyncEnabled = false, uint32_t frameResourcesCount = 3);
+  VulkanRenderer(VulkanRenderer const& other) = default;
+  VulkanRenderer(VulkanRenderer&& other) = default;
+  VulkanRenderer& operator=(VulkanRenderer const& other) = default;
+  VulkanRenderer& operator=(VulkanRenderer&& other) = default;
+  virtual ~VulkanRenderer();
 
+  bool Render();
   [[nodiscard]] bool CanRender() const { return m_CanRender; }
-  virtual bool Render() = 0;
 
-  bool PrepareVulkan(Os::WindowParameters windowParameters);
+  void SetOnRenderFrame(std::function<OnRenderFrameCallback> onRenderFrameCallback);
+  bool Initialize(Os::WindowParameters windowParameters);
+  void FreeBuffer(BufferData& vertexBuffer);
+
+  bool CreateBuffer(BufferData& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags requiredProperties);
+  bool CopyBuffer(BufferData& from, BufferData& to, VkDeviceSize size);
+
+  inline VkRenderPass GetRenderPass() const { return m_VulkanParameters.m_RenderPass; }
+  inline VkPipeline GetPipeline() const { return m_VulkanParameters.m_Pipeline; }
+  inline VkDevice GetDevice() const { return m_VulkanParameters.m_Device; }
+  inline VkQueue GetTransferQueue() const { return m_VulkanParameters.m_TransferQueue; };
+  inline VkCommandBuffer GetTransferCommandBuffer() const { return m_VulkanParameters.m_TransferCommandBuffer; }
 
 private:
   void Free();
@@ -110,39 +145,55 @@ private:
   [[nodiscard]] VkPresentModeKHR GetSwapchainPresentMode(
     std::vector<enum VkPresentModeKHR> const& supportedPresentationModes) const;
 
-  bool CreateQueue();
+  bool CreateGraphicsQueue();
+  bool CreateTransferQueue();
 
   VulkanDeleter<VkShaderModule, PFN_vkDestroyShaderModule> CreateShaderModule(char const* filename);
   VulkanDeleter<VkPipelineLayout, PFN_vkDestroyPipelineLayout> CreatePipelineLayout();
-  static std::vector<char> VulkanApp::ReadShaderContent(char const* filename);
-  bool AllocateCommandBuffer(FrameResource& frameResource);
-  bool AllocateVertexBuffer(VertexBuffer& vertexBuffer);
+  static std::vector<char> VulkanRenderer::ReadShaderContent(char const* filename);
+
+  bool AllocateBuffer(BufferData& vertexBuffer, VkMemoryPropertyFlags requiredProperties);
   bool AllocateBufferMemory(VkBuffer buffer, VkDeviceMemory* memory);
 
-  bool CreateSemaphores(FrameResource &frameResource);
-  bool CreateFence(FrameResource &frameResource);
+  bool CreateGraphicsCommandPool();
+  bool CreateTransferCommandPool();
 
-protected:
-  bool CreateCommandPool();
   bool CreateSwapchain();
   bool CreateSwapchainImageViews();
+  bool RecreateSwapchain();
+
   bool CreateRenderPass();
   bool CreatePipeline();
 
-  bool CreateVertexBuffer(std::vector<VertexData> const& vertexData, VertexBuffer& buffer);
-  void FreeVertexBuffer(VertexBuffer& vertexBuffer);
-  bool CreateFrameResources(uint32_t resourceCount, std::vector<FrameResource> &resources);
-  void FreeFrameResource(FrameResource& frameResource);
-  bool RecreateSwapchain();
+  bool AllocateGraphicsCommandBuffer(FrameResource& frameResource);
+  bool AllocateTransferCommandBuffer();
+  bool CreateSemaphores(FrameResource& frameResource);
+  bool CreateFence(FrameResource& frameResource);
 
+  bool CreateFrameResources();
+  void FreeFrameResource(FrameResource& frameResource);
+
+  bool CreateQueryPool();
+
+  bool CreateFramebuffer(VkFramebuffer& framebuffer, VkImageView& imageView);
+  bool PrepareAndRecordFrame(VkCommandBuffer commandBuffer, uint32_t acquiredImageIdx, VkFramebuffer& framebuffer);
+
+  std::vector<FrameResource> m_FrameResources;
+
+protected:
   Os::LibraryHandle m_VulkanLoaderHandle;
   VulkanParameters m_VulkanParameters;
   std::ostream& m_DebugOutput;
   volatile bool m_CanRender;
+  volatile bool m_IsRunning;
 
 private:
+  uint32_t m_FrameResourcesCount;
   Os::WindowParameters m_WindowParameters;
+  volatile uint32_t m_CurrentResourceIdx;
+  std::function<OnRenderFrameCallback> m_OnRenderFrameCallback;
+  FrameStat m_FrameStat;
 };
 } // namespace Core
 
-#endif // CORE_VULKANAPP_H
+#endif // CORE_VULKANRENDERER_H
