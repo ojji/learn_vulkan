@@ -1,1 +1,1 @@
-target_sources(learn_vulkan PRIVATE VulkanRenderer.cpp VulkanFunctions.cpp)
+target_sources(learn_vulkan PRIVATE VulkanRenderer.cpp)

@@ -65,82 +65,61 @@ public:
   bool CreateStagingAndVertexBuffer()
   {
     m_StagingBuffer.m_Size = SampleApp::MAX_STAGING_MEMORY_SIZE;
-    if (!m_VulkanRenderer->CreateBuffer(m_StagingBuffer,
-                                        VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                        VkMemoryPropertyFlagBits::VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+    if (!m_VulkanRenderer->CreateBuffer(
+          m_StagingBuffer, { vk::BufferUsageFlagBits::eTransferSrc }, { vk::MemoryPropertyFlagBits::eHostVisible })) {
       std::cerr << "Could not create staging buffer" << std::endl;
       return false;
     }
 
     VkDeviceSize vertexBufferSize = sizeof(Core::VertexData) * m_Vertices.size();
-    void* stagingBufferPointer;
-    VkResult result = Core::vkMapMemory(
-      m_VulkanRenderer->GetDevice(), m_StagingBuffer.m_Memory, 0, vertexBufferSize, 0, &stagingBufferPointer);
-
-    if (result != VK_SUCCESS) {
-      std::cerr << "Could not map host to device memory" << std::endl;
-      return false;
-    }
+    void* stagingBufferPointer =
+      m_VulkanRenderer->GetDevice().mapMemory(m_StagingBuffer.m_Memory, 0, vertexBufferSize, {});
 
     memcpy(stagingBufferPointer, m_Vertices.data(), vertexBufferSize);
 
-    VkMappedMemoryRange memoryRange = {
-      VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, // VkStructureType    sType;
-      nullptr,                               // const void*        pNext;
-      m_StagingBuffer.m_Memory,              // VkDeviceMemory     memory;
-      0,                                     // VkDeviceSize       offset;
-      VK_WHOLE_SIZE                          // VkDeviceSize       size;
-    };
+    auto memoryRange = vk::MappedMemoryRange(m_StagingBuffer.m_Memory, // vk::DeviceMemory memory_ = {},
+                                             0,                        // vk::DeviceSize offset_ = {},
+                                             VK_WHOLE_SIZE             // vk::DeviceSize size_ = {}
+    );
 
-    result = Core::vkFlushMappedMemoryRanges(m_VulkanRenderer->GetDevice(), 1, &memoryRange);
-    if (result != VK_SUCCESS) {
-      std::cerr << "Could not flush mapped memory" << std::endl;
-      return false;
-    }
-
-    Core::vkUnmapMemory(m_VulkanRenderer->GetDevice(), m_StagingBuffer.m_Memory);
+    m_VulkanRenderer->GetDevice().flushMappedMemoryRanges(memoryRange);
+    m_VulkanRenderer->GetDevice().unmapMemory(m_StagingBuffer.m_Memory);
 
     m_VertexBuffer.m_Size = vertexBufferSize;
-    if (!m_VulkanRenderer->CreateBuffer(m_VertexBuffer,
-                                        VkBufferUsageFlagBits::VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                                          | VkBufferUsageFlagBits::VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                        VkMemoryPropertyFlagBits::VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+    if (!m_VulkanRenderer->CreateBuffer(
+          m_VertexBuffer,
+          { vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer },
+          { vk::MemoryPropertyFlagBits::eDeviceLocal })) {
       std::cerr << "Could not create vertex buffer" << std::endl;
       return false;
     }
 
-    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetTransferCommandBuffer();
+    auto commandBuffer = m_VulkanRenderer->GetTransferCommandBuffer();
 
-    VkCommandBufferBeginInfo beginInfo = {
-      VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, // VkStructureType                          sType;
-      nullptr,                                     // const void*                              pNext;
-      VkCommandBufferUsageFlagBits::VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, // VkCommandBufferUsageFlags flags;
-      nullptr // const VkCommandBufferInheritanceInfo*    pInheritanceInfo;
-    };
-    Core::vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    auto beginInfo = vk::CommandBufferBeginInfo(
+      { vk::CommandBufferUsageFlagBits::eOneTimeSubmit }, // vk::CommandBufferUsageFlags flags_ = {},
+      nullptr // const vk::CommandBufferInheritanceInfo* pInheritanceInfo_ = {}
+    );
 
-    VkBufferCopy copyRegion = {
-      0,               // VkDeviceSize    srcOffset;
-      0,               // VkDeviceSize    dstOffset;
-      vertexBufferSize // VkDeviceSize    size;
-    };
-    Core::vkCmdCopyBuffer(commandBuffer, m_StagingBuffer.m_Handle, m_VertexBuffer.m_Handle, 1, &copyRegion);
-    Core::vkEndCommandBuffer(commandBuffer);
+    commandBuffer.begin(beginInfo);
 
-    VkSubmitInfo submitInfo = {
-      VK_STRUCTURE_TYPE_SUBMIT_INFO, // VkStructureType                sType;
-      nullptr,                       // const void*                    pNext;
-      0,                             // uint32_t                       waitSemaphoreCount;
-      nullptr,                       // const VkSemaphore*             pWaitSemaphores;
-      nullptr,                       // const VkPipelineStageFlags*    pWaitDstStageMask;
-      1,                             // uint32_t                       commandBufferCount;
-      &commandBuffer,                // const VkCommandBuffer*         pCommandBuffers;
-      0,                             // uint32_t                       signalSemaphoreCount;
-      nullptr                        // const VkSemaphore*             pSignalSemaphores;
-    };
+    auto copyRegion = vk::BufferCopy(0,               // vk::DeviceSize srcOffset_ = {},
+                                     0,               // vk::DeviceSize dstOffset_ = {},
+                                     vertexBufferSize // vk::DeviceSize size_ = {}
+    );
+    commandBuffer.copyBuffer(m_StagingBuffer.m_Handle, m_VertexBuffer.m_Handle, copyRegion);
+    commandBuffer.end();
 
-    Core::vkQueueSubmit(m_VulkanRenderer->GetTransferQueue(), 1, &submitInfo, nullptr);
+    auto submitInfo = vk::SubmitInfo(0,              // uint32_t waitSemaphoreCount_ = {},
+                                     nullptr,        // const vk::Semaphore* pWaitSemaphores_ = {},
+                                     nullptr,        // const vk::PipelineStageFlags* pWaitDstStageMask_ = {},
+                                     1,              // uint32_t commandBufferCount_ = {},
+                                     &commandBuffer, // const vk::CommandBuffer* pCommandBuffers_ = {},
+                                     0,              // uint32_t signalSemaphoreCount_ = {},
+                                     nullptr         // const vk::Semaphore* pSignalSemaphores_ = {}
+    );
 
+    m_VulkanRenderer->GetTransferQueue().submit(submitInfo, nullptr);
     return true;
   }
 
@@ -173,45 +152,36 @@ public:
 #endif
   }
 
-  bool RenderFrame(VkCommandBuffer& commandBuffer, VkFramebuffer& framebuffer, Core::ImageData& imageData)
+  bool RenderFrame(vk::CommandBuffer& commandBuffer, vk::Framebuffer& framebuffer, Core::ImageData& imageData)
   {
-    VkClearValue clearValue = { { (85.0f / 255.0f), (87.0f / 255.0f), (112.0f / 255.0f), 0.0f } };
-    VkRenderPassBeginInfo renderPassBeginInfo = {
-      VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,                          // VkStructureType        sType;
-      nullptr,                                                           // const void*            pNext;
-      m_VulkanRenderer->GetRenderPass(),                                 // VkRenderPass           renderPass;
-      framebuffer,                                                       // VkFramebuffer          framebuffer;
-      { { 0, 0 }, { imageData.m_ImageWidth, imageData.m_ImageHeight } }, // VkRect2D               renderArea;
-      1,                                                                 // uint32_t               clearValueCount;
-      &clearValue                                                        // const VkClearValue*    pClearValues;
-    };
+    vk::ClearValue clearValue = std::array<float, 4>({ (85.0f / 255.0f), (87.0f / 255.0f), (112.0f / 255.0f), 0.0f });
+    auto renderPassBeginInfo = vk::RenderPassBeginInfo(
+      m_VulkanRenderer->GetRenderPass(), // vk::RenderPass renderPass_ = {},
+      framebuffer,                       // vk::Framebuffer framebuffer_ = {},
+      vk::Rect2D(vk::Offset2D(0, 0),
+                 vk::Extent2D(imageData.m_ImageWidth, imageData.m_ImageHeight)), // vk::Rect2D renderArea_ = {},
+      1,                                                                         // uint32_t clearValueCount_ = {},
+      &clearValue // const vk::ClearValue* pClearValues_ = {}
+    );
 
-    Core::vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VkSubpassContents::VK_SUBPASS_CONTENTS_INLINE);
-    Core::vkCmdBindPipeline(
-      commandBuffer, VkPipelineBindPoint::VK_PIPELINE_BIND_POINT_GRAPHICS, m_VulkanRenderer->GetPipeline());
+    commandBuffer.beginRenderPass(renderPassBeginInfo, vk::SubpassContents::eInline);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, m_VulkanRenderer->GetPipeline());
 
-    VkViewport viewPort = {
-      0.0f,                                        // float    x;
-      0.0f,                                        // float    y;
-      static_cast<float>(imageData.m_ImageWidth),  // float    width;
-      static_cast<float>(imageData.m_ImageHeight), // float    height;
-      0.0f,                                        // float    minDepth;
-      1.0f                                         // float    maxDepth;
-    };
+    auto viewport = vk::Viewport(0.0f,                                        // float x_ = {},
+                                 0.0f,                                        // float y_ = {},
+                                 static_cast<float>(imageData.m_ImageWidth),  // float width_ = {},
+                                 static_cast<float>(imageData.m_ImageHeight), // float height_ = {},
+                                 0.0f,                                        // float minDepth_ = {},
+                                 1.0f                                         // float maxDepth_ = {}
+    );
 
-    Core::vkCmdSetViewport(commandBuffer, 0, 1, &viewPort);
+    commandBuffer.setViewport(0, viewport);
 
-    VkRect2D scissor = {
-      { 0, 0 },                                           // VkOffset2D    offset;
-      { imageData.m_ImageWidth, imageData.m_ImageHeight } // VkExtent2D    extent;
-    };
-    Core::vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-    VkDeviceSize offset = 0;
-    Core::vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_VertexBuffer.m_Handle, &offset);
-    Core::vkCmdDraw(commandBuffer, static_cast<uint32_t>(m_Vertices.size()), 1, 0, 0);
-
-    Core::vkCmdEndRenderPass(commandBuffer);
+    auto scissor = vk::Rect2D(vk::Offset2D(0, 0), vk::Extent2D(imageData.m_ImageWidth, imageData.m_ImageHeight));
+    commandBuffer.setScissor(0, scissor);
+    commandBuffer.bindVertexBuffers(0, m_VertexBuffer.m_Handle, vk::DeviceSize(0));
+    commandBuffer.draw(static_cast<uint32_t>(m_Vertices.size()), 1, 0, 0);
+    commandBuffer.endRenderPass();
     return true;
   }
 

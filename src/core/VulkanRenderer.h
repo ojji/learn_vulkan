@@ -3,9 +3,8 @@
 
 #include <ostream>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
-#include "core/VulkanDeleter.h"
 #include "os/Typedefs.h"
 #include "os/Window.h"
 
@@ -19,27 +18,27 @@ struct FrameStat
 
 struct ImageData
 {
-  VkImageView m_ImageView;
+  vk::ImageView m_ImageView;
   uint32_t m_ImageWidth;
   uint32_t m_ImageHeight;
 };
 
 struct FrameResource
 {
-  VkFence m_Fence;
-  VkFramebuffer m_Framebuffer;
-  VkSemaphore m_PresentToDrawSemaphore;
-  VkSemaphore m_DrawToPresentSemaphore;
-  VkCommandBuffer m_CommandBuffer;
+  vk::Fence m_Fence;
+  vk::Framebuffer m_Framebuffer;
+  vk::Semaphore m_PresentToDrawSemaphore;
+  vk::Semaphore m_DrawToPresentSemaphore;
+  vk::CommandBuffer m_CommandBuffer;
 };
 
 struct SwapchainData
 {
-  VkSwapchainKHR m_Handle;
-  VkFormat m_Format;
-  std::vector<VkImage> m_Images;
-  std::vector<VkImageView> m_ImageViews;
-  VkExtent2D m_ImageExtent;
+  vk::SwapchainKHR m_Handle;
+  vk::Format m_Format;
+  std::vector<vk::Image> m_Images;
+  std::vector<vk::ImageView> m_ImageViews;
+  vk::Extent2D m_ImageExtent;
 };
 
 struct VertexData
@@ -50,31 +49,31 @@ struct VertexData
 
 struct BufferData
 {
-  VkDeviceSize m_Size;
-  VkDeviceMemory m_Memory;
-  VkBuffer m_Handle;
+  vk::DeviceSize m_Size;
+  vk::DeviceMemory m_Memory;
+  vk::Buffer m_Handle;
 };
 
 struct VulkanParameters
 {
   typedef uint32_t QueueFamilyIdx;
-  VkInstance m_Instance;
-  VkPhysicalDevice m_PhysicalDevice;
-  VkDevice m_Device;
-  VkQueue m_GraphicsQueue;
-  VkQueue m_TransferQueue;
+  vk::Instance m_Instance;
+  vk::PhysicalDevice m_PhysicalDevice;
+  vk::Device m_Device;
+  vk::Queue m_GraphicsQueue;
+  vk::Queue m_TransferQueue;
   QueueFamilyIdx m_GraphicsQueueFamilyIdx;
   QueueFamilyIdx m_TransferQueueFamilyIdx;
-  VkSurfaceKHR m_PresentSurface;
-  VkSurfaceCapabilitiesKHR m_SurfaceCapabilities;
+  vk::SurfaceKHR m_PresentSurface;
+  vk::SurfaceCapabilitiesKHR m_SurfaceCapabilities;
   SwapchainData m_Swapchain;
-  VkCommandPool m_GraphicsCommandPool;
-  VkCommandPool m_TransferCommandPool;
-  VkCommandBuffer m_TransferCommandBuffer;
+  vk::CommandPool m_GraphicsCommandPool;
+  vk::CommandPool m_TransferCommandPool;
+  vk::CommandBuffer m_TransferCommandBuffer;
   bool m_VsyncEnabled;
-  VkRenderPass m_RenderPass;
-  VkPipeline m_Pipeline;
-  VkQueryPool m_QueryPool;
+  vk::RenderPass m_RenderPass;
+  vk::Pipeline m_Pipeline;
+  vk::QueryPool m_QueryPool;
   float m_TimestampPeriod;
   VulkanParameters();
 };
@@ -82,7 +81,9 @@ struct VulkanParameters
 class VulkanRenderer
 {
 public:
-  typedef bool(OnRenderFrameCallback)(VkCommandBuffer& commandBuffer, VkFramebuffer& framebuffer, ImageData& imageData);
+  typedef bool(OnRenderFrameCallback)(vk::CommandBuffer& commandBuffer,
+                                      vk::Framebuffer& framebuffer,
+                                      ImageData& imageData);
   VulkanRenderer(bool vsyncEnabled = false, uint32_t frameResourcesCount = 3);
   VulkanRenderer(std::ostream& debugOutput, bool vsyncEnabled = false, uint32_t frameResourcesCount = 3);
   VulkanRenderer(VulkanRenderer const& other) = default;
@@ -98,62 +99,53 @@ public:
   bool Initialize(Os::WindowParameters windowParameters);
   void FreeBuffer(BufferData& vertexBuffer);
 
-  bool CreateBuffer(BufferData& buffer, VkBufferUsageFlags usage, VkMemoryPropertyFlags requiredProperties);
+  bool CreateBuffer(BufferData& buffer, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags requiredProperties);
   bool CopyBuffer(BufferData& from, BufferData& to, VkDeviceSize size);
 
-  inline VkRenderPass GetRenderPass() const { return m_VulkanParameters.m_RenderPass; }
-  inline VkPipeline GetPipeline() const { return m_VulkanParameters.m_Pipeline; }
-  inline VkDevice GetDevice() const { return m_VulkanParameters.m_Device; }
-  inline VkQueue GetTransferQueue() const { return m_VulkanParameters.m_TransferQueue; };
-  inline VkCommandBuffer GetTransferCommandBuffer() const { return m_VulkanParameters.m_TransferCommandBuffer; }
+  inline vk::RenderPass GetRenderPass() const { return m_VulkanParameters.m_RenderPass; }
+  inline vk::Pipeline GetPipeline() const { return m_VulkanParameters.m_Pipeline; }
+  inline vk::Device GetDevice() const { return m_VulkanParameters.m_Device; }
+  inline vk::Queue GetTransferQueue() const { return m_VulkanParameters.m_TransferQueue; };
+  inline vk::CommandBuffer GetTransferCommandBuffer() const { return m_VulkanParameters.m_TransferCommandBuffer; }
 
 private:
   void Free();
-  bool LoadVulkanLibrary();
-  [[nodiscard]] bool LoadExportedEntryPoints() const;
-  [[nodiscard]] bool LoadGlobalLevelFunctions() const;
-  void GetVulkanImplementationVersion(uint32_t* implementationVersion) const;
-  [[nodiscard]] bool GetVulkanLayers(std::vector<VkLayerProperties>* layers) const;
-  [[nodiscard]] bool GetVulkanInstanceExtensions(std::vector<VkExtensionProperties>* instanceExtensions) const;
+
+  uint32_t GetVulkanImplementationVersion() const;
+  [[nodiscard]] std::vector<vk::LayerProperties> GetVulkanLayers() const;
+  [[nodiscard]] std::vector<vk::ExtensionProperties> GetVulkanInstanceExtensions() const;
   [[nodiscard]] bool RequiredInstanceExtensionsAvailable(std::vector<char const*> const& requiredExtensions) const;
-  [[nodiscard]] bool GetVulkanLayerExtensions(char const* layerName,
-                                              std::vector<VkExtensionProperties>* layerExtensions) const;
-  [[nodiscard]] bool LoadInstanceLevelFunctions() const;
+  [[nodiscard]] std::vector<vk::ExtensionProperties> GetVulkanLayerExtensions(std::string const& layerName) const;
   bool CreateInstance(std::vector<char const*> const& requiredExtensions);
   bool CreatePresentationSurface();
-  [[nodiscard]] bool GetVulkanDeviceExtensions(VkPhysicalDevice physicalDevice,
-                                               std::vector<VkExtensionProperties>* deviceExtensions) const;
-  [[nodiscard]] bool RequiredDeviceExtensionsAvailable(VkPhysicalDevice physicalDevice,
+  [[nodiscard]] std::vector<vk::ExtensionProperties> GetVulkanDeviceExtensions(vk::PhysicalDevice physicalDevice) const;
+  [[nodiscard]] bool RequiredDeviceExtensionsAvailable(vk::PhysicalDevice physicalDevice,
                                                        std::vector<char const*> const& requiredExtensions) const;
-  bool GetDeviceSurfaceCapabilities(VkPhysicalDevice physicalDevice,
-                                    VkSurfaceKHR surface,
-                                    VkSurfaceCapabilitiesKHR* surfaceCapabilities) const;
+  vk::SurfaceCapabilitiesKHR GetDeviceSurfaceCapabilities(vk::PhysicalDevice physicalDevice,
+                                                          vk::SurfaceKHR surface) const;
   bool CreateDevice();
-  [[nodiscard]] bool LoadDeviceLevelFunctions() const;
-  [[nodiscard]] bool GetSupportedSurfaceFormats(VkPhysicalDevice physicalDevice,
-                                                VkSurfaceKHR surface,
-                                                std::vector<VkSurfaceFormatKHR>* surfaceFormats) const;
-  [[nodiscard]] bool GetSupportedPresentationModes(VkPhysicalDevice physicalDevice,
-                                                   VkSurfaceKHR surface,
-                                                   std::vector<VkPresentModeKHR>* presentationModes) const;
+  [[nodiscard]] std::vector<vk::SurfaceFormatKHR> GetSupportedSurfaceFormats(vk::PhysicalDevice physicalDevice,
+                                                                             vk::SurfaceKHR surface) const;
+  [[nodiscard]] std::vector<vk::PresentModeKHR> GetSupportedPresentationModes(vk::PhysicalDevice physicalDevice,
+                                                                              vk::SurfaceKHR surface) const;
   [[nodiscard]] uint32_t GetSwapchainImageCount() const;
-  [[nodiscard]] VkSurfaceFormatKHR GetSwapchainFormat(
-    std::vector<VkSurfaceFormatKHR> const& supportedSurfaceFormats) const;
-  [[nodiscard]] VkExtent2D GetSwapchainExtent() const;
-  [[nodiscard]] VkImageUsageFlags GetSwapchainUsageFlags() const;
-  [[nodiscard]] VkSurfaceTransformFlagBitsKHR GetSwapchainTransform() const;
-  [[nodiscard]] VkPresentModeKHR GetSwapchainPresentMode(
-    std::vector<enum VkPresentModeKHR> const& supportedPresentationModes) const;
+  [[nodiscard]] vk::SurfaceFormatKHR GetSwapchainFormat(
+    std::vector<vk::SurfaceFormatKHR> const& supportedSurfaceFormats) const;
+  [[nodiscard]] vk::Extent2D GetSwapchainExtent() const;
+  [[nodiscard]] vk::ImageUsageFlags GetSwapchainUsageFlags() const;
+  [[nodiscard]] vk::SurfaceTransformFlagBitsKHR GetSwapchainTransform() const;
+  [[nodiscard]] vk::PresentModeKHR GetSwapchainPresentMode(
+    std::vector<enum vk::PresentModeKHR> const& supportedPresentationModes) const;
 
   bool CreateGraphicsQueue();
   bool CreateTransferQueue();
 
-  VulkanDeleter<VkShaderModule, PFN_vkDestroyShaderModule> CreateShaderModule(char const* filename);
-  VulkanDeleter<VkPipelineLayout, PFN_vkDestroyPipelineLayout> CreatePipelineLayout();
+  vk::UniqueShaderModule CreateShaderModule(char const* filename);
+  vk::UniquePipelineLayout CreatePipelineLayout();
   static std::vector<char> VulkanRenderer::ReadShaderContent(char const* filename);
 
-  bool AllocateBuffer(BufferData& vertexBuffer, VkMemoryPropertyFlags requiredProperties);
-  bool AllocateBufferMemory(VkBuffer buffer, VkDeviceMemory* memory);
+  bool AllocateBuffer(BufferData& vertexBuffer, vk::MemoryPropertyFlags requiredProperties);
+  bool AllocateBufferMemory(vk::Buffer buffer, vk::DeviceMemory* memory);
 
   bool CreateGraphicsCommandPool();
   bool CreateTransferCommandPool();
@@ -175,13 +167,13 @@ private:
 
   bool CreateQueryPool();
 
-  bool CreateFramebuffer(VkFramebuffer& framebuffer, VkImageView& imageView);
-  bool PrepareAndRecordFrame(VkCommandBuffer commandBuffer, uint32_t acquiredImageIdx, VkFramebuffer& framebuffer);
+  bool CreateFramebuffer(vk::Framebuffer& framebuffer, vk::ImageView& imageView);
+  bool PrepareAndRecordFrame(vk::CommandBuffer commandBuffer, uint32_t acquiredImageIdx, vk::Framebuffer& framebuffer);
 
   std::vector<FrameResource> m_FrameResources;
 
 protected:
-  Os::LibraryHandle m_VulkanLoaderHandle;
+  vk::DynamicLoader m_DynamicLoader;
   VulkanParameters m_VulkanParameters;
   std::ostream& m_DebugOutput;
   volatile bool m_CanRender;
