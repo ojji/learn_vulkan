@@ -447,9 +447,10 @@ bool VulkanRenderer::CreateDevice()
     }
 #endif
 
-    if (RequiredDeviceExtensionsAvailable(physicalDevices[deviceIdx], requiredDeviceExtensions)) {
+    if (RequiredDeviceExtensionsAvailable(physicalDevices[deviceIdx], requiredDeviceExtensions)
+        && !m_VulkanParameters.m_PhysicalDevice) {
       for (decltype(queueFamilyProperties)::size_type queueFamilyIdx = 0;
-           queueFamilyIdx != queueFamilyProperties.size() && !m_VulkanParameters.m_PhysicalDevice;
+           queueFamilyIdx != queueFamilyProperties.size();
            ++queueFamilyIdx) {
         vk::Bool32 isSurfacePresentationSupported = physicalDevices[deviceIdx].getSurfaceSupportKHR(
           static_cast<uint32_t>(queueFamilyIdx), m_VulkanParameters.m_PresentSurface);
@@ -485,6 +486,11 @@ bool VulkanRenderer::CreateDevice()
   auto queueCreateInfos = std::vector<vk::DeviceQueueCreateInfo>(
     { vk::DeviceQueueCreateInfo({},                                          // vk::DeviceQueueCreateFlags flags_ = {},
                                 m_VulkanParameters.m_GraphicsQueueFamilyIdx, // uint32_t queueFamilyIndex_ = {},
+                                static_cast<uint32_t>(queuePriorities.size()), // uint32_t queueCount_ = {},
+                                queuePriorities.data()                         // const float* pQueuePriorities_ = {}
+                                ),
+      vk::DeviceQueueCreateInfo({},                                          // vk::DeviceQueueCreateFlags flags_ = {},
+                                m_VulkanParameters.m_TransferQueueFamilyIdx, // uint32_t queueFamilyIndex_ = {},
                                 static_cast<uint32_t>(queuePriorities.size()), // uint32_t queueCount_ = {},
                                 queuePriorities.data()                         // const float* pQueuePriorities_ = {}
                                 ) });
