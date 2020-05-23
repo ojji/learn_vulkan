@@ -45,3 +45,6 @@ CMakeSettings.json
 # compiled shaders
 *.spv
 *.spv.debug
+
+# logs
+[Llogs]/
