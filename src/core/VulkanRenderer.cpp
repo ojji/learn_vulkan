@@ -26,9 +26,6 @@ VulkanParameters::VulkanParameters() :
   m_PresentSurface(nullptr),
   m_SurfaceCapabilities(),
   m_Swapchain(SwapchainData()),
-  m_GraphicsCommandPool(nullptr),
-  m_TransferCommandPool(nullptr),
-  m_TransferCommandBuffer(nullptr),
   m_VsyncEnabled(false),
   m_RenderPass(nullptr),
   m_Pipeline(nullptr)
@@ -43,7 +40,9 @@ VulkanRenderer::VulkanRenderer(std::ostream& debugOutput, bool vsyncEnabled, uin
   m_DebugOutput(debugOutput),
   m_WindowParameters(Os::WindowParameters()),
   m_FrameResourcesCount(frameResourcesCount),
-  m_FrameStat(FrameStat())
+  m_FrameStat(FrameStat()),
+  m_GraphicsQueueSubmitCriticalSection(std::mutex()),
+  m_TransferQueueSubmitCriticalSection(std::mutex())
 {
   m_DebugOutput << std::showbase;
   m_VulkanParameters.m_VsyncEnabled = vsyncEnabled;
@@ -79,29 +78,7 @@ void VulkanRenderer::Free()
       m_VulkanParameters.m_Device.destroySwapchainKHR(m_VulkanParameters.m_Swapchain.m_Handle);
     }
 
-    if (m_VulkanParameters.m_GraphicsCommandPool) {
-      m_VulkanParameters.m_Device.destroyCommandPool(m_VulkanParameters.m_GraphicsCommandPool);
-      ;
-      m_VulkanParameters.m_GraphicsCommandPool = nullptr;
-    }
-
-    if (m_VulkanParameters.m_TransferCommandBuffer) {
-      m_VulkanParameters.m_Device.freeCommandBuffers(m_VulkanParameters.m_TransferCommandPool,
-                                                     m_VulkanParameters.m_TransferCommandBuffer);
-      // vkFreeCommandBuffers(m_VulkanParameters.m_Device,
-      //                      m_VulkanParameters.m_TransferCommandPool,
-      //                      1,
-      //                      &m_VulkanParameters.m_TransferCommandBuffer);
-      m_VulkanParameters.m_TransferCommandBuffer = nullptr;
-    }
-
-    if (m_VulkanParameters.m_TransferCommandPool) {
-      m_VulkanParameters.m_Device.destroyCommandPool(m_VulkanParameters.m_TransferCommandPool);
-      m_VulkanParameters.m_TransferCommandPool = nullptr;
-    }
-
     m_VulkanParameters.m_Device.destroy();
-    // vkDestroyDevice(m_VulkanParameters.m_Device, nullptr);
     m_VulkanParameters.m_Device = nullptr;
     m_VulkanParameters.m_GraphicsQueue = nullptr;
     m_VulkanParameters.m_TransferQueue = nullptr;
@@ -122,11 +99,6 @@ void VulkanRenderer::Free()
 VulkanRenderer::~VulkanRenderer()
 {
   Free();
-}
-
-void VulkanRenderer::SetOnRenderFrame(std::function<OnRenderFrameCallback> onRenderFrameCallback)
-{
-  m_OnRenderFrameCallback = onRenderFrameCallback;
 }
 
 bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
@@ -213,18 +185,6 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
     return false;
   }
 
-  if (!CreateGraphicsCommandPool()) {
-    return false;
-  }
-
-  if (!CreateTransferCommandPool()) {
-    return false;
-  }
-
-  if (!AllocateTransferCommandBuffer()) {
-    return false;
-  }
-
   if (!CreateSwapchain()) {
     return false;
   }
@@ -234,10 +194,6 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
   }
 
   if (!CreatePipeline()) {
-    return false;
-  }
-
-  if (!CreateFrameResources()) {
     return false;
   }
 
@@ -745,7 +701,7 @@ bool VulkanRenderer::CreateTransferQueue()
   return true;
 }
 
-bool VulkanRenderer::CreateGraphicsCommandPool()
+vk::CommandPool VulkanRenderer::CreateGraphicsCommandPool()
 {
   auto commandPoolCreateInfo = vk::CommandPoolCreateInfo(
     { vk::CommandPoolCreateFlagBits::eResetCommandBuffer
@@ -753,11 +709,10 @@ bool VulkanRenderer::CreateGraphicsCommandPool()
     m_VulkanParameters.m_GraphicsQueueFamilyIdx      // uint32_t queueFamilyIndex_ = {}
   );
 
-  m_VulkanParameters.m_GraphicsCommandPool = m_VulkanParameters.m_Device.createCommandPool(commandPoolCreateInfo);
-  return true;
+  return m_VulkanParameters.m_Device.createCommandPool(commandPoolCreateInfo);
 }
 
-bool VulkanRenderer::CreateTransferCommandPool()
+vk::CommandPool VulkanRenderer::CreateTransferCommandPool()
 {
   auto commandPoolCreateInfo = vk::CommandPoolCreateInfo(
     { vk::CommandPoolCreateFlagBits::eResetCommandBuffer
@@ -765,57 +720,18 @@ bool VulkanRenderer::CreateTransferCommandPool()
     m_VulkanParameters.m_TransferQueueFamilyIdx      // uint32_t queueFamilyIndex_ = {}
   );
 
-  m_VulkanParameters.m_TransferCommandPool = m_VulkanParameters.m_Device.createCommandPool(commandPoolCreateInfo);
-  return true;
+  return m_VulkanParameters.m_Device.createCommandPool(commandPoolCreateInfo);
 }
 
-
-bool VulkanRenderer::AllocateGraphicsCommandBuffer(FrameResource& frameResource)
+vk::CommandBuffer VulkanRenderer::AllocateCommandBuffer(vk::CommandPool commandPool)
 {
   auto allocateInfo = vk::CommandBufferAllocateInfo(
-    m_VulkanParameters.m_GraphicsCommandPool, // vk::CommandPool commandPool_ = {},
-    vk::CommandBufferLevel::ePrimary,         // vk::CommandBufferLevel level_ = vk::CommandBufferLevel::ePrimary,
-    1                                         // uint32_t commandBufferCount_ = {}
+    commandPool,                      // vk::CommandPool commandPool_ = {},
+    vk::CommandBufferLevel::ePrimary, // vk::CommandBufferLevel level_ = vk::CommandBufferLevel::ePrimary,
+    1                                 // uint32_t commandBufferCount_ = {}
   );
 
-  frameResource.m_CommandBuffer = m_VulkanParameters.m_Device.allocateCommandBuffers(allocateInfo)[0];
-  return true;
-}
-
-bool VulkanRenderer::AllocateTransferCommandBuffer()
-{
-  auto allocateInfo = vk::CommandBufferAllocateInfo(
-    m_VulkanParameters.m_TransferCommandPool, // vk::CommandPool commandPool_ = {},
-    { vk::CommandBufferLevel::ePrimary },     // vk::CommandBufferLevel level_ = vk::CommandBufferLevel::ePrimary,
-    1                                         // uint32_t commandBufferCount_ = {}
-  );
-
-  m_VulkanParameters.m_TransferCommandBuffer = m_VulkanParameters.m_Device.allocateCommandBuffers(allocateInfo)[0];
-  return true;
-}
-
-bool VulkanRenderer::CreateFrameResources()
-{
-  m_FrameResources.clear();
-  m_FrameResources.resize(m_FrameResourcesCount);
-
-  for (uint32_t i = 0; i != m_FrameResources.size(); ++i) {
-    if (!AllocateGraphicsCommandBuffer(m_FrameResources[i])) {
-      std::cerr << "Could not allocate command buffer" << std::endl;
-      return false;
-    }
-
-    if (!CreateSemaphores(m_FrameResources[i])) {
-      std::cerr << "Could not create semaphores for render resource #" << i << std::endl;
-      return false;
-    }
-
-    if (!CreateFence(m_FrameResources[i])) {
-      std::cerr << "Could not create fence for render resource #" << i << std::endl;
-      return false;
-    }
-  }
-  return true;
+  return m_VulkanParameters.m_Device.allocateCommandBuffers(allocateInfo)[0];
 }
 
 void VulkanRenderer::FreeFrameResource(FrameResource& frameResource)
@@ -832,11 +748,8 @@ void VulkanRenderer::FreeFrameResource(FrameResource& frameResource)
   if (frameResource.m_Framebuffer) {
     m_VulkanParameters.m_Device.destroyFramebuffer(frameResource.m_Framebuffer);
   }
-  if (frameResource.m_CommandBuffer) {
-    m_VulkanParameters.m_Device.freeCommandBuffers(m_VulkanParameters.m_GraphicsCommandPool,
-                                                   frameResource.m_CommandBuffer);
-    // vkFreeCommandBuffers(
-    //   m_VulkanParameters.m_Device, m_VulkanParameters.m_GraphicsCommandPool, 1, &frameResource.m_CommandBuffer);
+  if (frameResource.m_QueryPool) {
+    m_VulkanParameters.m_Device.destroyQueryPool(frameResource.m_QueryPool);
   }
 }
 
@@ -868,104 +781,175 @@ bool VulkanRenderer::CreateFence(FrameResource& frameResource)
   return true;
 }
 
-bool VulkanRenderer::Render()
+void VulkanRenderer::InitializeFrameResources()
+{
+  m_FrameResources.clear();
+  m_FrameResources.resize(m_FrameResourcesCount);
+
+  for (uint32_t i = 0; i != m_FrameResources.size(); ++i) {
+    m_FrameResources[i].m_FrameIdx = i;
+    if (!CreateSemaphores(m_FrameResources[i])) {
+      throw std::runtime_error("Could not create semaphores for render resource #" + i);
+    }
+
+    if (!CreateFence(m_FrameResources[i])) {
+      throw std::runtime_error("Could not create fence for render resource #" + i);
+    }
+
+    auto queryPoolCreateInfo =
+      vk::QueryPoolCreateInfo({},                        // vk::QueryPoolCreateFlags flags_ = {}, reserved
+                              vk::QueryType::eTimestamp, // vk::QueryType queryType_ = vk::QueryType::eOcclusion,
+                              2,                         // uint32_t queryCount_ = {},
+                              {}                         // vk::QueryPipelineStatisticFlags pipelineStatistics_ = {}
+      );
+
+    m_FrameResources[i].m_QueryPool = m_VulkanParameters.m_Device.createQueryPool(queryPoolCreateInfo);
+  }
+}
+
+std::tuple<vk::Result, FrameResource> VulkanRenderer::AcquireNextFrameResources()
 {
   uint32_t currentResourceIdx = (InterlockedIncrement(&m_CurrentResourceIdx) - 1) % m_FrameResourcesCount;
   auto result = m_VulkanParameters.m_Device.waitForFences(
     m_FrameResources[currentResourceIdx].m_Fence, VK_FALSE, std::numeric_limits<uint64_t>::max());
   if (result != vk::Result::eSuccess) {
     std::cerr << "Wait on fence timed out" << std::endl;
-    return false;
+    return { result, FrameResource() };
   }
 
-  uint32_t acquiredImageIdx;
-  auto acquireResult =
+  vk::ResultValue acquireResult =
     m_VulkanParameters.m_Device.acquireNextImageKHR(m_VulkanParameters.m_Swapchain.m_Handle,
                                                     std::numeric_limits<uint64_t>::max(),
                                                     m_FrameResources[currentResourceIdx].m_PresentToDrawSemaphore,
                                                     nullptr);
 
-  switch (acquireResult.result) {
-  case vk::Result::eSuccess:
-  case vk::Result::eSuboptimalKHR: {
-    acquiredImageIdx = acquireResult.value;
-  } break;
-  case vk::Result::eErrorOutOfDateKHR: {
-#ifdef _DEBUG
-    m_DebugOutput << "Swapchain image out of date during acquiring, recreating the swapchain" << std::endl;
-#endif
-    m_VulkanParameters.m_Device.waitIdle();
-    return RecreateSwapchain();
-  } break;
-  default:
-    std::cerr << "Render error! (" << result << ")" << std::endl;
-    return false;
+  if (acquireResult.result != vk::Result::eSuccess) {
+    return { result, FrameResource() };
   }
 
-  if (!PrepareAndRecordFrame(m_FrameResources[currentResourceIdx].m_CommandBuffer,
-                             acquiredImageIdx,
-                             m_FrameResources[currentResourceIdx].m_Framebuffer)) {
-    return false;
+  m_FrameResources[currentResourceIdx].m_ImageData.m_ImageIdx = acquireResult.value;
+  m_FrameResources[currentResourceIdx].m_ImageData.m_ImageView =
+    m_VulkanParameters.m_Swapchain.m_ImageViews[acquireResult.value];
+  m_FrameResources[currentResourceIdx].m_ImageData.m_ImageWidth = m_VulkanParameters.m_Swapchain.m_ImageExtent.width;
+  m_FrameResources[currentResourceIdx].m_ImageData.m_ImageHeight = m_VulkanParameters.m_Swapchain.m_ImageExtent.height;
+
+  if (m_FrameResources[currentResourceIdx].m_Framebuffer) {
+    m_VulkanParameters.m_Device.destroyFramebuffer(m_FrameResources[currentResourceIdx].m_Framebuffer);
+    m_FrameResources[currentResourceIdx].m_Framebuffer = nullptr;
   }
 
-  vk::PipelineStageFlags waitStageMask = { vk::PipelineStageFlagBits::eTransfer };
-  auto submitInfo = vk::SubmitInfo(
-    1,                                                              // uint32_t waitSemaphoreCount_ = {},
-    &m_FrameResources[currentResourceIdx].m_PresentToDrawSemaphore, // const vk::Semaphore* pWaitSemaphores_ = {},
-    &waitStageMask,                                        // const vk::PipelineStageFlags* pWaitDstStageMask_ = {},
-    1,                                                     // uint32_t commandBufferCount_ = {},
-    &m_FrameResources[currentResourceIdx].m_CommandBuffer, // const vk::CommandBuffer* pCommandBuffers_ = {},
-    1,                                                     // uint32_t signalSemaphoreCount_ = {},
-    &m_FrameResources[currentResourceIdx].m_DrawToPresentSemaphore // const vk::Semaphore* pSignalSemaphores_ = {}
+  auto framebufferCreateInfo = vk::FramebufferCreateInfo(
+    {},                                                                // vk::FramebufferCreateFlags flags_ = {},
+    m_VulkanParameters.m_RenderPass,                                   // vk::RenderPass renderPass_ = {},
+    1,                                                                 // uint32_t attachmentCount_ = {},
+    &m_VulkanParameters.m_Swapchain.m_ImageViews[acquireResult.value], // const vk::ImageView* pAttachments_ = {},
+    m_VulkanParameters.m_Swapchain.m_ImageExtent.width,                // uint32_t width_ = {},
+    m_VulkanParameters.m_Swapchain.m_ImageExtent.height,               // uint32_t height_ = {},
+    1                                                                  // uint32_t layers_ = {}
   );
 
-  m_VulkanParameters.m_Device.resetFences(m_FrameResources[currentResourceIdx].m_Fence);
-  m_VulkanParameters.m_GraphicsQueue.submit(submitInfo, m_FrameResources[currentResourceIdx].m_Fence);
+  m_FrameResources[currentResourceIdx].m_Framebuffer =
+    m_VulkanParameters.m_Device.createFramebuffer(framebufferCreateInfo);
 
-  auto presentInfo = vk::PresentInfoKHR(
-    1,                                                              // uint32_t waitSemaphoreCount_ = {},
-    &m_FrameResources[currentResourceIdx].m_DrawToPresentSemaphore, // const vk::Semaphore* pWaitSemaphores_ = {},
-    1,                                                              // uint32_t swapchainCount_ = {},
-    &m_VulkanParameters.m_Swapchain.m_Handle,                       // const vk::SwapchainKHR* pSwapchains_ = {},
-    &acquiredImageIdx,                                              // const uint32_t* pImageIndices_ = {},
-    nullptr                                                         // vk::Result* pResults_ = {}
-  );
+  return { acquireResult.result, m_FrameResources[currentResourceIdx] };
+}
+
+vk::Result VulkanRenderer::PresentFrame(FrameResource& frameResources)
+{
+  auto presentInfo =
+    vk::PresentInfoKHR(1,                                        // uint32_t waitSemaphoreCount_ = {},
+                       &frameResources.m_DrawToPresentSemaphore, // const vk::Semaphore* pWaitSemaphores_ = {},
+                       1,                                        // uint32_t swapchainCount_ = {},
+                       &m_VulkanParameters.m_Swapchain.m_Handle, // const vk::SwapchainKHR* pSwapchains_ = {},
+                       &frameResources.m_ImageData.m_ImageIdx,   // const uint32_t* pImageIndices_ = {},
+                       nullptr                                   // vk::Result* pResults_ = {}
+    );
 
   auto presentResult = m_VulkanParameters.m_GraphicsQueue.presentKHR(presentInfo);
-  switch (presentResult) {
-  case vk::Result::eSuccess:
-    break;
-  case vk::Result::eErrorOutOfDateKHR:
-  case vk::Result::eSuboptimalKHR: {
-#ifdef _DEBUG
-    m_DebugOutput << "Swapchain image suboptimal or out of date during presenting, recreating swapchain" << std::endl;
-#endif
-    m_VulkanParameters.m_Device.waitIdle();
-    return RecreateSwapchain();
-  } break;
-  default:
-    std::cerr << "Render error! (" << result << ")" << std::endl;
-    return false;
-  }
 
   // Frame time data
-  m_FrameStat.m_BeginFrameTimestamp = 0;
-  m_FrameStat.m_EndFrameTimestamp = 0;
-  m_VulkanParameters.m_Device.getQueryPoolResults(m_VulkanParameters.m_QueryPool,
+  frameResources.m_FrameStat.m_BeginFrameTimestamp = 0;
+  frameResources.m_FrameStat.m_EndFrameTimestamp = 0;
+  m_VulkanParameters.m_Device.getQueryPoolResults(frameResources.m_QueryPool,
                                                   0,
                                                   2,
                                                   2 * sizeof(uint64_t),
-                                                  &m_FrameStat,
+                                                  &frameResources.m_FrameStat,
                                                   sizeof(uint64_t),
                                                   { vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait });
+  return presentResult;
+}
 
-  double frameTimeInMs = static_cast<double>(m_FrameStat.m_EndFrameTimestamp - m_FrameStat.m_BeginFrameTimestamp)
+double VulkanRenderer::GetFrameTimeInMs(FrameStat const& frameStat)
+{
+  double frameTimeInMs = static_cast<double>(frameStat.m_EndFrameTimestamp - frameStat.m_BeginFrameTimestamp)
                          * static_cast<double>(m_VulkanParameters.m_TimestampPeriod) / 1'000'000.0;
+  return frameTimeInMs;
+}
 
-  double fps = 1.0 / (frameTimeInMs / 1'000);
-  UNREFERENCED_PARAMETER(fps);
-  //  std::cout << "GPU time: " << frameTimeInMs << " ms (" << fps << " fps)" << std::endl;
-  return true;
+void VulkanRenderer::BeginFrame(FrameResource& frameResources, vk::CommandBuffer commandBuffer)
+{
+  commandBuffer.begin(vk::CommandBufferBeginInfo({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit }, nullptr));
+  commandBuffer.resetQueryPool(frameResources.m_QueryPool, 0, 2);
+  commandBuffer.writeTimestamp({ vk::PipelineStageFlagBits::eBottomOfPipe }, frameResources.m_QueryPool, 0);
+
+  auto subresourceRange =
+    vk::ImageSubresourceRange({ vk::ImageAspectFlagBits::eColor }, // vk::ImageAspectFlags aspectMask_ = {},
+                              0,                                   // uint32_t baseMipLevel_ = {},
+                              1,                                   // uint32_t levelCount_ = {},
+                              0,                                   // uint32_t baseArrayLayer_ = {},
+                              1                                    // uint32_t layerCount_ = {}
+    );
+
+  auto fromPresentToDrawBarrier = vk::ImageMemoryBarrier(
+    { vk::AccessFlagBits::eMemoryRead },           // vk::AccessFlags srcAccessMask_ = {},
+    { vk::AccessFlagBits::eColorAttachmentWrite }, // vk::AccessFlags dstAccessMask_ = {},
+    vk::ImageLayout::eUndefined,                   // vk::ImageLayout oldLayout_ = vk::ImageLayout::eUndefined,
+    vk::ImageLayout::ePresentSrcKHR,               // vk::ImageLayout newLayout_ = vk::ImageLayout::eUndefined,
+    m_VulkanParameters.m_GraphicsQueueFamilyIdx,   // uint32_t srcQueueFamilyIndex_ = {},
+    m_VulkanParameters.m_GraphicsQueueFamilyIdx,   // uint32_t dstQueueFamilyIndex_ = {},
+    m_VulkanParameters.m_Swapchain.m_Images[frameResources.m_ImageData.m_ImageIdx], // vk::Image image_ = {},
+    subresourceRange // vk::ImageSubresourceRange subresourceRange_ = {}
+  );
+
+  commandBuffer.pipelineBarrier({ vk::PipelineStageFlagBits::eColorAttachmentOutput },
+                                { vk::PipelineStageFlagBits::eColorAttachmentOutput },
+                                {},
+                                nullptr,
+                                nullptr,
+                                fromPresentToDrawBarrier);
+}
+
+void VulkanRenderer::EndFrame(FrameResource& frameResources, vk::CommandBuffer commandBuffer)
+{
+  auto subresourceRange =
+    vk::ImageSubresourceRange({ vk::ImageAspectFlagBits::eColor }, // vk::ImageAspectFlags aspectMask_ = {},
+                              0,                                   // uint32_t baseMipLevel_ = {},
+                              1,                                   // uint32_t levelCount_ = {},
+                              0,                                   // uint32_t baseArrayLayer_ = {},
+                              1                                    // uint32_t layerCount_ = {}
+    );
+
+  auto fromDrawToPresentBarrier = vk::ImageMemoryBarrier(
+    { vk::AccessFlagBits::eColorAttachmentWrite }, // vk::AccessFlags srcAccessMask_ = {},
+    { vk::AccessFlagBits::eMemoryRead },           // vk::AccessFlags dstAccessMask_ = {},
+    vk::ImageLayout::ePresentSrcKHR,               // vk::ImageLayout oldLayout_ = vk::ImageLayout::eUndefined,
+    vk::ImageLayout::ePresentSrcKHR,               // vk::ImageLayout newLayout_ = vk::ImageLayout::eUndefined,
+    m_VulkanParameters.m_GraphicsQueueFamilyIdx,   // uint32_t srcQueueFamilyIndex_ = {},
+    m_VulkanParameters.m_GraphicsQueueFamilyIdx,   // uint32_t dstQueueFamilyIndex_ = {},
+    m_VulkanParameters.m_Swapchain.m_Images[frameResources.m_ImageData.m_ImageIdx], // vk::Image image_ = {},
+    subresourceRange // vk::ImageSubresourceRange subresourceRange_ = {}
+  );
+
+  commandBuffer.pipelineBarrier({ vk::PipelineStageFlagBits::eColorAttachmentOutput },
+                                { vk::PipelineStageFlagBits::eBottomOfPipe },
+                                {},
+                                nullptr,
+                                nullptr,
+                                fromDrawToPresentBarrier);
+
+  commandBuffer.writeTimestamp({ vk::PipelineStageFlagBits::eBottomOfPipe }, frameResources.m_QueryPool, 1);
+  commandBuffer.end();
 }
 
 bool VulkanRenderer::CreateRenderPass()
@@ -1252,6 +1236,18 @@ bool VulkanRenderer::CreateBuffer(BufferData& buffer,
   return true;
 }
 
+void VulkanRenderer::SubmitToGraphicsQueue(vk::SubmitInfo& submitInfo, vk::Fence fence)
+{
+  std::lock_guard<std::mutex> lock(m_GraphicsQueueSubmitCriticalSection);
+  m_VulkanParameters.m_GraphicsQueue.submit(submitInfo, fence);
+}
+
+void VulkanRenderer::SubmitToTransferQueue(vk::SubmitInfo& submitInfo, vk::Fence fence)
+{
+  std::lock_guard<std::mutex> lock(m_TransferQueueSubmitCriticalSection);
+  m_VulkanParameters.m_TransferQueue.submit(submitInfo, fence);
+}
+
 bool VulkanRenderer::AllocateBuffer(BufferData& buffer, vk::MemoryPropertyFlags requiredProperties)
 {
   vk::MemoryRequirements memoryRequirements = m_VulkanParameters.m_Device.getBufferMemoryRequirements(buffer.m_Handle);
@@ -1302,79 +1298,4 @@ bool VulkanRenderer::CreateFramebuffer(vk::Framebuffer& framebuffer, vk::ImageVi
   framebuffer = m_VulkanParameters.m_Device.createFramebuffer(framebufferCreateInfo);
   return true;
 }
-
-bool VulkanRenderer::PrepareAndRecordFrame(vk::CommandBuffer commandBuffer,
-                                           uint32_t acquiredImageIdx,
-                                           vk::Framebuffer& framebuffer)
-{
-  if (!CreateFramebuffer(framebuffer, m_VulkanParameters.m_Swapchain.m_ImageViews[acquiredImageIdx])) {
-    return false;
-  }
-
-  auto commandBufferBeginInfo = vk::CommandBufferBeginInfo(
-    { vk::CommandBufferUsageFlagBits::eOneTimeSubmit }, // vk::CommandBufferUsageFlags flags_ = {},
-    nullptr // const vk::CommandBufferInheritanceInfo* pInheritanceInfo_ = {}
-  );
-
-  commandBuffer.begin(commandBufferBeginInfo);
-  commandBuffer.resetQueryPool(m_VulkanParameters.m_QueryPool, 0, 2);
-  commandBuffer.writeTimestamp({ vk::PipelineStageFlagBits::eBottomOfPipe }, m_VulkanParameters.m_QueryPool, 0);
-
-  auto subresourceRange =
-    vk::ImageSubresourceRange({ vk::ImageAspectFlagBits::eColor }, // vk::ImageAspectFlags aspectMask_ = {},
-                              0,                                   // uint32_t baseMipLevel_ = {},
-                              1,                                   // uint32_t levelCount_ = {},
-                              0,                                   // uint32_t baseArrayLayer_ = {},
-                              1                                    // uint32_t layerCount_ = {}
-    );
-
-  auto fromPresentToDrawBarrier =
-    vk::ImageMemoryBarrier({ vk::AccessFlagBits::eMemoryRead },           // vk::AccessFlags srcAccessMask_ = {},
-                           { vk::AccessFlagBits::eColorAttachmentWrite }, // vk::AccessFlags dstAccessMask_ = {},
-                           vk::ImageLayout::eUndefined,     // vk::ImageLayout oldLayout_ = vk::ImageLayout::eUndefined,
-                           vk::ImageLayout::ePresentSrcKHR, // vk::ImageLayout newLayout_ = vk::ImageLayout::eUndefined,
-                           m_VulkanParameters.m_GraphicsQueueFamilyIdx, // uint32_t srcQueueFamilyIndex_ = {},
-                           m_VulkanParameters.m_GraphicsQueueFamilyIdx, // uint32_t dstQueueFamilyIndex_ = {},
-                           m_VulkanParameters.m_Swapchain.m_Images[acquiredImageIdx], // vk::Image image_ = {},
-                           subresourceRange // vk::ImageSubresourceRange subresourceRange_ = {}
-    );
-
-  commandBuffer.pipelineBarrier({ vk::PipelineStageFlagBits::eColorAttachmentOutput },
-                                { vk::PipelineStageFlagBits::eColorAttachmentOutput },
-                                {},
-                                nullptr,
-                                nullptr,
-                                fromPresentToDrawBarrier);
-
-  // Core
-  ImageData imageData = { m_VulkanParameters.m_Swapchain.m_ImageViews[acquiredImageIdx],
-                          m_VulkanParameters.m_Swapchain.m_ImageExtent.width,
-                          m_VulkanParameters.m_Swapchain.m_ImageExtent.height };
-
-  if (m_OnRenderFrameCallback && !m_OnRenderFrameCallback(commandBuffer, framebuffer, imageData)) {
-    return false;
-  }
-
-  auto fromDrawToPresentBarrier =
-    vk::ImageMemoryBarrier({ vk::AccessFlagBits::eColorAttachmentWrite }, // vk::AccessFlags srcAccessMask_ = {},
-                           { vk::AccessFlagBits::eMemoryRead },           // vk::AccessFlags dstAccessMask_ = {},
-                           vk::ImageLayout::ePresentSrcKHR, // vk::ImageLayout oldLayout_ = vk::ImageLayout::eUndefined,
-                           vk::ImageLayout::ePresentSrcKHR, // vk::ImageLayout newLayout_ = vk::ImageLayout::eUndefined,
-                           m_VulkanParameters.m_GraphicsQueueFamilyIdx, // uint32_t srcQueueFamilyIndex_ = {},
-                           m_VulkanParameters.m_GraphicsQueueFamilyIdx, // uint32_t dstQueueFamilyIndex_ = {},
-                           m_VulkanParameters.m_Swapchain.m_Images[acquiredImageIdx], // vk::Image image_ = {},
-                           subresourceRange // vk::ImageSubresourceRange subresourceRange_ = {}
-    );
-
-  commandBuffer.pipelineBarrier({ vk::PipelineStageFlagBits::eColorAttachmentOutput },
-                                { vk::PipelineStageFlagBits::eBottomOfPipe },
-                                {},
-                                nullptr,
-                                nullptr,
-                                fromDrawToPresentBarrier);
-  commandBuffer.writeTimestamp({ vk::PipelineStageFlagBits::eBottomOfPipe }, m_VulkanParameters.m_QueryPool, 1);
-  commandBuffer.end();
-  return true;
-}
-
 } // namespace Core

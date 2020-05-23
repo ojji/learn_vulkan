@@ -1,6 +1,7 @@
 #ifndef CORE_VULKANRENDERER_H
 #define CORE_VULKANRENDERER_H
 
+#include <mutex>
 #include <ostream>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -18,6 +19,7 @@ struct FrameStat
 
 struct ImageData
 {
+  uint32_t m_ImageIdx;
   vk::ImageView m_ImageView;
   uint32_t m_ImageWidth;
   uint32_t m_ImageHeight;
@@ -25,11 +27,15 @@ struct ImageData
 
 struct FrameResource
 {
+  uint32_t m_FrameIdx;
   vk::Fence m_Fence;
   vk::Framebuffer m_Framebuffer;
   vk::Semaphore m_PresentToDrawSemaphore;
   vk::Semaphore m_DrawToPresentSemaphore;
   vk::CommandBuffer m_CommandBuffer;
+  vk::QueryPool m_QueryPool;
+  ImageData m_ImageData;
+  FrameStat m_FrameStat;
 };
 
 struct SwapchainData
@@ -67,9 +73,6 @@ struct VulkanParameters
   vk::SurfaceKHR m_PresentSurface;
   vk::SurfaceCapabilitiesKHR m_SurfaceCapabilities;
   SwapchainData m_Swapchain;
-  vk::CommandPool m_GraphicsCommandPool;
-  vk::CommandPool m_TransferCommandPool;
-  vk::CommandBuffer m_TransferCommandBuffer;
   bool m_VsyncEnabled;
   vk::RenderPass m_RenderPass;
   vk::Pipeline m_Pipeline;
@@ -81,9 +84,6 @@ struct VulkanParameters
 class VulkanRenderer
 {
 public:
-  typedef bool(OnRenderFrameCallback)(vk::CommandBuffer& commandBuffer,
-                                      vk::Framebuffer& framebuffer,
-                                      ImageData& imageData);
   VulkanRenderer(bool vsyncEnabled = false, uint32_t frameResourcesCount = 3);
   VulkanRenderer(std::ostream& debugOutput, bool vsyncEnabled = false, uint32_t frameResourcesCount = 3);
   VulkanRenderer(VulkanRenderer const& other) = default;
@@ -92,21 +92,31 @@ public:
   VulkanRenderer& operator=(VulkanRenderer&& other) = default;
   virtual ~VulkanRenderer();
 
-  bool Render();
   [[nodiscard]] bool CanRender() const { return m_CanRender; }
 
-  void SetOnRenderFrame(std::function<OnRenderFrameCallback> onRenderFrameCallback);
   bool Initialize(Os::WindowParameters windowParameters);
   void FreeBuffer(BufferData& vertexBuffer);
 
   bool CreateBuffer(BufferData& buffer, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags requiredProperties);
-  bool CopyBuffer(BufferData& from, BufferData& to, VkDeviceSize size);
+
+  void SubmitToGraphicsQueue(vk::SubmitInfo& submitInfo, vk::Fence fence);
+  void SubmitToTransferQueue(vk::SubmitInfo& submitInfo, vk::Fence fence);
 
   inline vk::RenderPass GetRenderPass() const { return m_VulkanParameters.m_RenderPass; }
   inline vk::Pipeline GetPipeline() const { return m_VulkanParameters.m_Pipeline; }
   inline vk::Device GetDevice() const { return m_VulkanParameters.m_Device; }
-  inline vk::Queue GetTransferQueue() const { return m_VulkanParameters.m_TransferQueue; };
-  inline vk::CommandBuffer GetTransferCommandBuffer() const { return m_VulkanParameters.m_TransferCommandBuffer; }
+
+  vk::CommandPool CreateGraphicsCommandPool();
+  vk::CommandPool CreateTransferCommandPool();
+  vk::CommandBuffer VulkanRenderer::AllocateCommandBuffer(vk::CommandPool commandPool);
+  void VulkanRenderer::InitializeFrameResources();
+  std::tuple<vk::Result, FrameResource> AcquireNextFrameResources();
+  void BeginFrame(FrameResource& frameResources, vk::CommandBuffer commandBuffer);
+  void EndFrame(FrameResource& frameResources, vk::CommandBuffer commandBuffer);
+
+  vk::Result VulkanRenderer::PresentFrame(FrameResource& frameResources);
+  bool RecreateSwapchain();
+  double GetFrameTimeInMs(FrameStat const& frameStat);
 
 private:
   void Free();
@@ -147,28 +157,20 @@ private:
   bool AllocateBuffer(BufferData& vertexBuffer, vk::MemoryPropertyFlags requiredProperties);
   bool AllocateBufferMemory(vk::Buffer buffer, vk::DeviceMemory* memory);
 
-  bool CreateGraphicsCommandPool();
-  bool CreateTransferCommandPool();
-
   bool CreateSwapchain();
   bool CreateSwapchainImageViews();
-  bool RecreateSwapchain();
 
   bool CreateRenderPass();
   bool CreatePipeline();
 
-  bool AllocateGraphicsCommandBuffer(FrameResource& frameResource);
-  bool AllocateTransferCommandBuffer();
   bool CreateSemaphores(FrameResource& frameResource);
   bool CreateFence(FrameResource& frameResource);
 
-  bool CreateFrameResources();
   void FreeFrameResource(FrameResource& frameResource);
 
   bool CreateQueryPool();
 
   bool CreateFramebuffer(vk::Framebuffer& framebuffer, vk::ImageView& imageView);
-  bool PrepareAndRecordFrame(vk::CommandBuffer commandBuffer, uint32_t acquiredImageIdx, vk::Framebuffer& framebuffer);
 
   std::vector<FrameResource> m_FrameResources;
 
@@ -183,8 +185,9 @@ private:
   uint32_t m_FrameResourcesCount;
   Os::WindowParameters m_WindowParameters;
   volatile uint32_t m_CurrentResourceIdx;
-  std::function<OnRenderFrameCallback> m_OnRenderFrameCallback;
   FrameStat m_FrameStat;
+  std::mutex m_GraphicsQueueSubmitCriticalSection;
+  std::mutex m_TransferQueueSubmitCriticalSection;
 };
 } // namespace Core
 
