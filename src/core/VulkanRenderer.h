@@ -1,11 +1,13 @@
 #ifndef CORE_VULKANRENDERER_H
 #define CORE_VULKANRENDERER_H
 
+#include <memory>
 #include <mutex>
 #include <ostream>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "CopyToLocalBufferJob.h"
 #include "os/Typedefs.h"
 #include "os/Window.h"
 
@@ -97,7 +99,7 @@ public:
   bool Initialize(Os::WindowParameters windowParameters);
   void FreeBuffer(BufferData& vertexBuffer);
 
-  bool CreateBuffer(BufferData& buffer, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags requiredProperties);
+  BufferData CreateBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags requiredProperties);
 
   void SubmitToGraphicsQueue(vk::SubmitInfo& submitInfo, vk::Fence fence);
   void SubmitToTransferQueue(vk::SubmitInfo& submitInfo, vk::Fence fence);
@@ -105,6 +107,7 @@ public:
   inline vk::RenderPass GetRenderPass() const { return m_VulkanParameters.m_RenderPass; }
   inline vk::Pipeline GetPipeline() const { return m_VulkanParameters.m_Pipeline; }
   inline vk::Device GetDevice() const { return m_VulkanParameters.m_Device; }
+  vk::DeviceSize GetNonCoherentAtomSize() const;
 
   vk::CommandPool CreateGraphicsCommandPool();
   vk::CommandPool CreateTransferCommandPool();
@@ -117,6 +120,11 @@ public:
   vk::Result VulkanRenderer::PresentFrame(FrameResource& frameResources);
   bool RecreateSwapchain();
   double GetFrameTimeInMs(FrameStat const& frameStat);
+  void CopyToLocalBuffer(std::shared_ptr<Core::CopyToLocalBufferJob> transferJob,
+                         vk::CommandBuffer graphicsCommandBuffer,
+                         vk::CommandBuffer transferCommandBuffer,
+                         vk::Buffer sourceBuffer,
+                         vk::DeviceSize sourceOffset);
 
 private:
   void Free();
@@ -153,9 +161,6 @@ private:
   vk::UniqueShaderModule CreateShaderModule(char const* filename);
   vk::UniquePipelineLayout CreatePipelineLayout();
   static std::vector<char> VulkanRenderer::ReadShaderContent(char const* filename);
-
-  bool AllocateBuffer(BufferData& vertexBuffer, vk::MemoryPropertyFlags requiredProperties);
-  bool AllocateBufferMemory(vk::Buffer buffer, vk::DeviceMemory* memory);
 
   bool CreateSwapchain();
   bool CreateSwapchainImageViews();

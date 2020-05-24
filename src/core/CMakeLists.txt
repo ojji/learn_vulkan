@@ -1,1 +1,1 @@
-target_sources(learn_vulkan PRIVATE VulkanRenderer.cpp)
+target_sources(learn_vulkan PRIVATE VulkanRenderer.cpp CopyToLocalBufferJob.cpp)

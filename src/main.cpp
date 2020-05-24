@@ -1,3 +1,4 @@
+#include "core/CopyToLocalBufferJob.h"
 #include "core/VulkanFunctions.h"
 #include "core/VulkanRenderer.h"
 #include "os/Common.h"
@@ -13,6 +14,7 @@
 #include <tchar.h>
 #include <thread>
 #include <vector>
+
 
 class Transition
 {
@@ -42,31 +44,26 @@ private:
   float m_PeriodInSeconds;
 };
 
-class CopyToLocalBufferJob
-{
-public:
-  CopyToLocalBufferJob(void* data,
-                       vk::DeviceSize size,
-                       vk::Buffer destinationBuffer,
-                       vk::DeviceSize destinationOffset) :
-    m_Data(data),
-    m_Size(size),
-    m_DestinationBuffer(destinationBuffer),
-    m_DestinationOffset(destinationOffset){};
-
-private:
-  void* m_Data;
-  vk::DeviceSize m_Size;
-  vk::Buffer m_DestinationBuffer;
-  vk::DeviceSize m_DestinationOffset;
-};
-
 class SampleApp
 {
 public:
   static DWORD WINAPI RenderLoop(LPVOID param)
   {
     SampleApp* app = reinterpret_cast<SampleApp*>(param);
+
+    std::vector<Core::VertexData> vertices = {
+      Core::VertexData{ { -0.7f, 0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+      Core::VertexData{ { 0.7f, 0.7f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+      Core::VertexData{ { -0.7f, -0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f, 1.0f, 1.0f } },
+      Core::VertexData{ { 0.7f, -0.7f, 0.0f, 1.0f }, { 0.3f, 0.3f, 0.3f, 1.0f } }
+    };
+
+    vk::DeviceSize verticesSize = static_cast<uint32_t>(vertices.size()) * sizeof(Core::VertexData);
+    Core::BufferData vertexBuffer = app->m_VulkanRenderer->CreateBuffer(
+      verticesSize,
+      { vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer },
+      { vk::MemoryPropertyFlagBits::eDeviceLocal });
+
     std::vector<vk::CommandPool> commandPools = std::vector<vk::CommandPool>(app->MAX_FRAMES_IN_FLIGHT);
     for (uint32_t idx = 0; idx != app->MAX_FRAMES_IN_FLIGHT; ++idx) {
       commandPools[idx] = app->m_VulkanRenderer->CreateGraphicsCommandPool();
@@ -78,6 +75,7 @@ public:
     }
 
     app->m_VulkanRenderer->InitializeFrameResources();
+    bool firstFrame = true;
 
     while (app->m_IsRunning) {
       // Draw here if you can
@@ -97,6 +95,27 @@ public:
         } break;
         default:
           throw std::runtime_error("Render error! " + vk::to_string(acquireResult));
+        }
+
+        if (firstFrame) {
+          {
+            auto transferJob = std::shared_ptr<Core::CopyToLocalBufferJob>(
+              new Core::CopyToLocalBufferJob(app->m_VulkanRenderer.get(),
+                                             vertices.data(),
+                                             verticesSize,
+                                             vertexBuffer.m_Handle,
+                                             vk::DeviceSize(0),
+                                             { vk::AccessFlagBits::eVertexAttributeRead },
+                                             { vk::PipelineStageFlagBits::eVertexInput }));
+
+            {
+              std::lock_guard<std::mutex> lock(app->m_TransferQueueCriticalSection);
+              app->m_TransferQueue.push_back(transferJob);
+            }
+
+            transferJob->WaitComplete();
+            firstFrame = false;
+          }
         }
 
         vk::CommandPool currentCommandPool = commandPools[frameResources.m_FrameIdx];
@@ -140,12 +159,11 @@ public:
           vk::Rect2D(vk::Offset2D(0, 0),
                      vk::Extent2D(frameResources.m_ImageData.m_ImageWidth, frameResources.m_ImageData.m_ImageHeight));
         commandBuffer.setScissor(0, scissor);
-        commandBuffer.bindVertexBuffers(0, app->m_VertexBuffer.m_Handle, vk::DeviceSize(0));
-        commandBuffer.draw(static_cast<uint32_t>(app->m_Vertices.size()), 1, 0, 0);
+        commandBuffer.bindVertexBuffers(0, vertexBuffer.m_Handle, vk::DeviceSize(0));
+        commandBuffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
         commandBuffer.endRenderPass();
 
         app->m_VulkanRenderer->EndFrame(frameResources, commandBuffer);
-
         vk::PipelineStageFlags waitStageMask = { vk::PipelineStageFlagBits::eTransfer };
         auto submitInfo =
           vk::SubmitInfo(1,                                        // uint32_t waitSemaphoreCount_ = {},
@@ -156,7 +174,6 @@ public:
                          1,              // uint32_t signalSemaphoreCount_ = {},
                          &frameResources.m_DrawToPresentSemaphore // const vk::Semaphore* pSignalSemaphores_ = {}
           );
-
         app->m_VulkanRenderer->GetDevice().resetFences(frameResources.m_Fence);
         app->m_VulkanRenderer->SubmitToGraphicsQueue(submitInfo, frameResources.m_Fence);
 
@@ -182,6 +199,7 @@ public:
     }
 
     app->m_VulkanRenderer->GetDevice().waitIdle();
+    app->m_VulkanRenderer->FreeBuffer(vertexBuffer);
     for (auto& commandPool : commandPools) {
       app->m_VulkanRenderer->GetDevice().destroyCommandPool(commandPool);
     }
@@ -192,10 +210,69 @@ public:
   {
     SampleApp* app = reinterpret_cast<SampleApp*>(param);
 
+    vk::CommandPool graphicsCommandPool = app->m_VulkanRenderer->CreateGraphicsCommandPool();
+    vk::CommandPool transferCommandPool = app->m_VulkanRenderer->CreateTransferCommandPool();
+    vk::CommandBuffer transferCommandBuffer = app->m_VulkanRenderer->AllocateCommandBuffer(transferCommandPool);
+    vk::CommandBuffer graphicsCommandBuffer = app->m_VulkanRenderer->AllocateCommandBuffer(graphicsCommandPool);
+
+    const vk::DeviceSize nonCoherentAtomSize = app->m_VulkanRenderer->GetNonCoherentAtomSize();
+    assert((nonCoherentAtomSize & (nonCoherentAtomSize - 1)) == 0 && nonCoherentAtomSize != 0);
+
+
+    Core::BufferData stagingBuffer = app->m_VulkanRenderer->CreateBuffer(
+      SampleApp::STAGING_MEMORY_SIZE,
+      { vk::BufferUsageFlagBits::eTransferSrc },
+      { vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent });
+
+    void* stagingBufferPtr =
+      app->m_VulkanRenderer->GetDevice().mapMemory(stagingBuffer.m_Memory, 0, stagingBuffer.m_Size, {});
+
+    uintptr_t currentPtr = reinterpret_cast<uintptr_t>(stagingBufferPtr);
+    vk::DeviceSize bytesInUse = vk::DeviceSize(0);
+
+    std::shared_ptr<Core::CopyToLocalBufferJob> currentJob;
     while (app->m_IsRunning) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      _mm_pause();
+      if (app->m_TransferQueue.size() > 0) {
+        currentJob = nullptr;
+        {
+          std::lock_guard<std::mutex> lock(app->m_TransferQueueCriticalSection);
+          currentJob = app->m_TransferQueue.back();
+          app->m_TransferQueue.pop_back();
+        }
+
+        if (currentJob) {
+          app->m_VulkanRenderer->GetDevice().resetCommandPool(transferCommandPool, {});
+          app->m_VulkanRenderer->GetDevice().resetCommandPool(graphicsCommandPool, {});
+          memcpy(reinterpret_cast<void*>(currentPtr + bytesInUse), currentJob->GetDataPtr(), currentJob->GetSize());
+
+          vk::DeviceSize offsetRoundedDown = bytesInUse - (bytesInUse & (nonCoherentAtomSize - 1));
+          vk::DeviceSize sizeRoundedUp =
+            ((currentJob->GetSize() + nonCoherentAtomSize - 1) & (~nonCoherentAtomSize + 1));
+          if (bytesInUse > offsetRoundedDown) {
+            sizeRoundedUp += nonCoherentAtomSize;
+          }
+
+          auto mappedMemoryRange = vk::MappedMemoryRange(stagingBuffer.m_Memory, // vk::DeviceMemory memory_ = {},
+                                                         offsetRoundedDown,      // vk::DeviceSize offset_ = {},
+                                                         sizeRoundedUp           // vk::DeviceSize size_ = {}
+          );
+
+          app->m_VulkanRenderer->GetDevice().flushMappedMemoryRanges(mappedMemoryRange);
+
+          app->m_VulkanRenderer->CopyToLocalBuffer(
+            currentJob, graphicsCommandBuffer, transferCommandBuffer, stagingBuffer.m_Handle, bytesInUse);
+
+          bytesInUse += currentJob->GetSize();
+        }
+      } else {
+        _mm_pause();
+      }
     }
+
+    app->m_VulkanRenderer->GetDevice().unmapMemory(stagingBuffer.m_Memory);
+    app->m_VulkanRenderer->FreeBuffer(stagingBuffer);
+    app->m_VulkanRenderer->GetDevice().destroyCommandPool(graphicsCommandPool);
+    app->m_VulkanRenderer->GetDevice().destroyCommandPool(transferCommandPool);
     return 0;
   }
 
@@ -205,11 +282,7 @@ public:
     m_Transition(Transition())
   {}
 
-  virtual ~SampleApp()
-  {
-    m_VulkanRenderer->FreeBuffer(m_StagingBuffer);
-    m_VulkanRenderer->FreeBuffer(m_VertexBuffer);
-  }
+  virtual ~SampleApp() {}
 
   bool Initialize()
   {
@@ -221,11 +294,6 @@ public:
       return false;
     }
 
-    m_Vertices = { Core::VertexData{ { -0.7f, 0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
-                   Core::VertexData{ { 0.7f, 0.7f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
-                   Core::VertexData{ { -0.7f, -0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f, 1.0f, 1.0f } },
-                   Core::VertexData{ { 0.7f, -0.7f, 0.0f, 1.0f }, { 0.3f, 0.3f, 0.3f, 1.0f } } };
-
     std::array<float, 4> color = { (85.0f / 255.0f), (87.0f / 255.0f), (112.0f / 255.0f), 0.0f };
     std::array<float, 4> otherColor = { (179.0f / 255.0f), (147.0f / 255.0f), (29.0f / 255.0f), 0.0f };
     m_Transition = Transition(color, otherColor, 1.0f);
@@ -233,78 +301,6 @@ public:
     QueryPerformanceCounter(&m_StartTime);
     QueryPerformanceFrequency(&m_Frequency);
 
-    if (!CreateStagingAndVertexBuffer()) {
-      return false;
-    }
-
-    return true;
-  }
-
-  bool CreateStagingAndVertexBuffer()
-  {
-    m_StagingBuffer.m_Size = SampleApp::MAX_STAGING_MEMORY_SIZE;
-    if (!m_VulkanRenderer->CreateBuffer(
-          m_StagingBuffer, { vk::BufferUsageFlagBits::eTransferSrc }, { vk::MemoryPropertyFlagBits::eHostVisible })) {
-      std::cerr << "Could not create staging buffer" << std::endl;
-      return false;
-    }
-
-    VkDeviceSize vertexBufferSize = sizeof(Core::VertexData) * m_Vertices.size();
-    void* stagingBufferPointer =
-      m_VulkanRenderer->GetDevice().mapMemory(m_StagingBuffer.m_Memory, 0, vertexBufferSize, {});
-
-    memcpy(stagingBufferPointer, m_Vertices.data(), vertexBufferSize);
-
-    auto memoryRange = vk::MappedMemoryRange(m_StagingBuffer.m_Memory, // vk::DeviceMemory memory_ = {},
-                                             0,                        // vk::DeviceSize offset_ = {},
-                                             VK_WHOLE_SIZE             // vk::DeviceSize size_ = {}
-    );
-
-    m_VulkanRenderer->GetDevice().flushMappedMemoryRanges(memoryRange);
-    m_VulkanRenderer->GetDevice().unmapMemory(m_StagingBuffer.m_Memory);
-
-    m_VertexBuffer.m_Size = vertexBufferSize;
-    if (!m_VulkanRenderer->CreateBuffer(
-          m_VertexBuffer,
-          { vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer },
-          { vk::MemoryPropertyFlagBits::eDeviceLocal })) {
-      std::cerr << "Could not create vertex buffer" << std::endl;
-      return false;
-    }
-
-    auto commandPool = m_VulkanRenderer->CreateTransferCommandPool();
-    auto allocateInfo = vk::CommandBufferAllocateInfo(
-      commandPool,                          // vk::CommandPool commandPool_ = {},
-      { vk::CommandBufferLevel::ePrimary }, // vk::CommandBufferLevel level_ = vk::CommandBufferLevel::ePrimary,
-      1                                     // uint32_t commandBufferCount_ = {}
-    );
-
-    vk::CommandBuffer commandBuffer = m_VulkanRenderer->GetDevice().allocateCommandBuffers(allocateInfo)[0];
-
-    auto beginInfo = vk::CommandBufferBeginInfo(
-      { vk::CommandBufferUsageFlagBits::eOneTimeSubmit }, // vk::CommandBufferUsageFlags flags_ = {},
-      nullptr // const vk::CommandBufferInheritanceInfo* pInheritanceInfo_ = {}
-    );
-
-    commandBuffer.begin(beginInfo);
-
-    auto copyRegion = vk::BufferCopy(0,               // vk::DeviceSize srcOffset_ = {},
-                                     0,               // vk::DeviceSize dstOffset_ = {},
-                                     vertexBufferSize // vk::DeviceSize size_ = {}
-    );
-    commandBuffer.copyBuffer(m_StagingBuffer.m_Handle, m_VertexBuffer.m_Handle, copyRegion);
-    commandBuffer.end();
-
-    auto submitInfo = vk::SubmitInfo(0,              // uint32_t waitSemaphoreCount_ = {},
-                                     nullptr,        // const vk::Semaphore* pWaitSemaphores_ = {},
-                                     nullptr,        // const vk::PipelineStageFlags* pWaitDstStageMask_ = {},
-                                     1,              // uint32_t commandBufferCount_ = {},
-                                     &commandBuffer, // const vk::CommandBuffer* pCommandBuffers_ = {},
-                                     0,              // uint32_t signalSemaphoreCount_ = {},
-                                     nullptr         // const vk::Semaphore* pSignalSemaphores_ = {}
-    );
-
-    m_VulkanRenderer->SubmitToTransferQueue(submitInfo, nullptr);
     return true;
   }
 
@@ -336,14 +332,11 @@ public:
   }
 
 private:
-  static constexpr uint32_t MAX_STAGING_MEMORY_SIZE = 4000;
+  static constexpr uint32_t STAGING_MEMORY_SIZE = 256 * 1024 * 1024;
   static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
   std::unique_ptr<Os::Window> m_Window;
   std::unique_ptr<Core::VulkanRenderer> m_VulkanRenderer;
-  Core::BufferData m_VertexBuffer;
-  Core::BufferData m_StagingBuffer;
-  std::vector<Core::VertexData> m_Vertices;
-  std::vector<CopyToLocalBufferJob> m_TransferQueue;
+  std::vector<std::shared_ptr<Core::CopyToLocalBufferJob>> m_TransferQueue;
   Transition m_Transition;
   LARGE_INTEGER m_StartTime;
   LARGE_INTEGER m_Frequency;

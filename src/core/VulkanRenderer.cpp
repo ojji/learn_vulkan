@@ -1212,28 +1212,39 @@ bool VulkanRenderer::RecreateSwapchain()
   return true;
 }
 
-bool VulkanRenderer::CreateBuffer(BufferData& buffer,
-                                  vk::BufferUsageFlags usage,
-                                  vk::MemoryPropertyFlags requiredProperties)
+BufferData VulkanRenderer::CreateBuffer(vk::DeviceSize size,
+                                        vk::BufferUsageFlags usage,
+                                        vk::MemoryPropertyFlags requiredProperties)
 {
   auto bufferCreateInfo =
     vk::BufferCreateInfo({},                          // vk::BufferCreateFlags flags_ = {},
-                         buffer.m_Size,               // vk::DeviceSize size_ = {},
+                         size,                        // vk::DeviceSize size_ = {},
                          usage,                       // vk::BufferUsageFlags usage_ = {},
                          vk::SharingMode::eExclusive, // vk::SharingMode sharingMode_ = vk::SharingMode::eExclusive,
                          0,                           // uint32_t queueFamilyIndexCount_ = {},
                          nullptr                      // const uint32_t* pQueueFamilyIndices_ = {}
     );
 
+  BufferData buffer;
   buffer.m_Handle = m_VulkanParameters.m_Device.createBuffer(bufferCreateInfo);
 
-  if (!AllocateBuffer(buffer, requiredProperties)) {
-    std::cerr << "Could not allocate buffer" << std::endl;
-    return false;
+  vk::MemoryRequirements memoryRequirements = m_VulkanParameters.m_Device.getBufferMemoryRequirements(buffer.m_Handle);
+  vk::PhysicalDeviceMemoryProperties memoryProperties = m_VulkanParameters.m_PhysicalDevice.getMemoryProperties();
+  for (uint32_t i = 0; i != memoryProperties.memoryTypeCount; ++i) {
+    if (memoryRequirements.memoryTypeBits & (1 << i)
+        && (memoryProperties.memoryTypes[i].propertyFlags & requiredProperties)) {
+      auto allocateInfo = vk::MemoryAllocateInfo(memoryRequirements.size, // vk::DeviceSize allocationSize_ = {},
+                                                 i                        // uint32_t memoryTypeIndex_ = {}
+      );
+
+      buffer.m_Size = memoryRequirements.size;
+      buffer.m_Memory = m_VulkanParameters.m_Device.allocateMemory(allocateInfo);
+      break;
+    }
   }
 
   m_VulkanParameters.m_Device.bindBufferMemory(buffer.m_Handle, buffer.m_Memory, 0);
-  return true;
+  return buffer;
 }
 
 void VulkanRenderer::SubmitToGraphicsQueue(vk::SubmitInfo& submitInfo, vk::Fence fence)
@@ -1246,25 +1257,6 @@ void VulkanRenderer::SubmitToTransferQueue(vk::SubmitInfo& submitInfo, vk::Fence
 {
   std::lock_guard<std::mutex> lock(m_TransferQueueSubmitCriticalSection);
   m_VulkanParameters.m_TransferQueue.submit(submitInfo, fence);
-}
-
-bool VulkanRenderer::AllocateBuffer(BufferData& buffer, vk::MemoryPropertyFlags requiredProperties)
-{
-  vk::MemoryRequirements memoryRequirements = m_VulkanParameters.m_Device.getBufferMemoryRequirements(buffer.m_Handle);
-  vk::PhysicalDeviceMemoryProperties memoryProperties = m_VulkanParameters.m_PhysicalDevice.getMemoryProperties();
-
-  for (uint32_t i = 0; i != memoryProperties.memoryTypeCount; ++i) {
-    if (memoryRequirements.memoryTypeBits & (1 << i)
-        && (memoryProperties.memoryTypes[i].propertyFlags & requiredProperties)) {
-      auto allocateInfo = vk::MemoryAllocateInfo(memoryRequirements.size, // vk::DeviceSize allocationSize_ = {},
-                                                 i                        // uint32_t memoryTypeIndex_ = {}
-      );
-
-      buffer.m_Memory = m_VulkanParameters.m_Device.allocateMemory(allocateInfo);
-      return true;
-    }
-  }
-  return false;
 }
 
 void VulkanRenderer::FreeBuffer(BufferData& buffer)
@@ -1297,5 +1289,87 @@ bool VulkanRenderer::CreateFramebuffer(vk::Framebuffer& framebuffer, vk::ImageVi
 
   framebuffer = m_VulkanParameters.m_Device.createFramebuffer(framebufferCreateInfo);
   return true;
+}
+
+void VulkanRenderer::CopyToLocalBuffer(std::shared_ptr<CopyToLocalBufferJob> transferJob,
+                                       vk::CommandBuffer graphicsCommandBuffer,
+                                       vk::CommandBuffer transferCommandBuffer,
+                                       vk::Buffer sourceBuffer,
+                                       vk::DeviceSize sourceOffset)
+{
+  transferCommandBuffer.begin(vk::CommandBufferBeginInfo({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit }, nullptr));
+  auto copyRegion = vk::BufferCopy(sourceOffset,                        // vk::DeviceSize srcOffset_ = {},
+                                   transferJob->GetDestinationOffset(), // vk::DeviceSize dstOffset_ = {},
+                                   transferJob->GetSize()               // vk::DeviceSize size_ = {}
+  );
+  transferCommandBuffer.copyBuffer(sourceBuffer, transferJob->GetDestinationBuffer(), copyRegion);
+
+  // Release ownership
+  auto releaseBarrier =
+    vk::BufferMemoryBarrier({ vk::AccessFlagBits::eTransferWrite },      // vk::AccessFlags srcAccessMask_ = {},
+                            {},                                          // vk::AccessFlags dstAccessMask_ = {},
+                            m_VulkanParameters.m_TransferQueueFamilyIdx, // uint32_t srcQueueFamilyIndex_ = {},
+                            m_VulkanParameters.m_GraphicsQueueFamilyIdx, // uint32_t dstQueueFamilyIndex_ = {},
+                            transferJob->GetDestinationBuffer(),         // vk::Buffer buffer_ = {},
+                            transferJob->GetDestinationOffset(),         // vk::DeviceSize offset_ = {},
+                            transferJob->GetSize()                       // vk::DeviceSize size_ = {}
+    );
+  transferCommandBuffer.pipelineBarrier({ vk::PipelineStageFlagBits::eTransfer },
+                                        { vk::PipelineStageFlagBits::eBottomOfPipe },
+                                        {},
+                                        nullptr,
+                                        releaseBarrier,
+                                        nullptr);
+  transferCommandBuffer.end();
+
+  auto transferSubmitInfo =
+    vk::SubmitInfo(0,                      // uint32_t waitSemaphoreCount_ = {},
+                   nullptr,                // const vk::Semaphore* pWaitSemaphores_ = {},
+                   nullptr,                // const vk::PipelineStageFlags* pWaitDstStageMask_ = {},
+                   1,                      // uint32_t commandBufferCount_ = {},
+                   &transferCommandBuffer, // const vk::CommandBuffer* pCommandBuffers_ = {},
+                   1,                      // uint32_t signalSemaphoreCount_ = {},
+                   &transferJob->GetFromTransferToGraphicsSemaphore() // const vk::Semaphore* pSignalSemaphores_ = {}
+    );
+  SubmitToTransferQueue(transferSubmitInfo, nullptr);
+
+  graphicsCommandBuffer.begin(vk::CommandBufferBeginInfo({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit }, nullptr));
+  // Acquire ownership
+  auto acquireBarrier =
+    vk::BufferMemoryBarrier({},                                          // vk::AccessFlags srcAccessMask_ = {},
+                            transferJob->GetDestinationAccessFlags(),    // vk::AccessFlags dstAccessMask_ = {},
+                            m_VulkanParameters.m_TransferQueueFamilyIdx, // uint32_t srcQueueFamilyIndex_ = {},
+                            m_VulkanParameters.m_GraphicsQueueFamilyIdx, // uint32_t dstQueueFamilyIndex_ = {},
+                            transferJob->GetDestinationBuffer(),         // vk::Buffer buffer_ = {},
+                            transferJob->GetDestinationOffset(),         // vk::DeviceSize offset_ = {},
+                            transferJob->GetSize()                       // vk::DeviceSize size_ = {}
+    );
+
+  graphicsCommandBuffer.pipelineBarrier({ vk::PipelineStageFlagBits::eTopOfPipe },
+                                        transferJob->GetDestinationPipelineStageFlags(),
+                                        {},
+                                        nullptr,
+                                        acquireBarrier,
+                                        nullptr);
+  graphicsCommandBuffer.end();
+
+  vk::PipelineStageFlags waitStage[] = { transferJob->GetDestinationPipelineStageFlags() };
+  auto graphicsSubmitInfo =
+    vk::SubmitInfo(1,                                                  // uint32_t waitSemaphoreCount_ = {},
+                   &transferJob->GetFromTransferToGraphicsSemaphore(), // const vk::Semaphore* pWaitSemaphores_ = {},
+                   waitStage,              // const vk::PipelineStageFlags* pWaitDstStageMask_ = {},
+                   1,                      // uint32_t commandBufferCount_ = {},
+                   &graphicsCommandBuffer, // const vk::CommandBuffer* pCommandBuffers_ = {},
+                   0,                      // uint32_t signalSemaphoreCount_ = {},
+                   nullptr                 // const vk::Semaphore* pSignalSemaphores_ = {}
+    );
+  SubmitToGraphicsQueue(graphicsSubmitInfo, transferJob->GetTransferCompletedFence());
+  transferJob->SetWait();
+}
+
+vk::DeviceSize VulkanRenderer::GetNonCoherentAtomSize() const
+{
+  vk::PhysicalDeviceProperties2 properties = m_VulkanParameters.m_PhysicalDevice.getProperties2();
+  return properties.properties.limits.nonCoherentAtomSize;
 }
 } // namespace Core
