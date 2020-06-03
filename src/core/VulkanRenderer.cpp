@@ -25,7 +25,7 @@ VulkanParameters::VulkanParameters() :
   m_TransferQueueFamilyIdx(std::numeric_limits<QueueFamilyIdx>::max()),
   m_PresentSurface(nullptr),
   m_SurfaceCapabilities(),
-  m_Swapchain(SwapchainData()),
+  m_Swapchain(Swapchain()),
   m_VsyncEnabled(false),
   m_RenderPass(nullptr),
   m_Pipeline(nullptr)
@@ -376,6 +376,28 @@ bool VulkanRenderer::CreateDevice()
     }
 #endif
 
+    // Get memory properties
+    vk::PhysicalDeviceMemoryProperties memoryProperties = physicalDevices[deviceIdx].getMemoryProperties();
+    float bytesInMegaBytes = 1.0f * 1024.0f * 1024.0f;
+#ifdef _DEBUG
+    m_DebugOutput << "\nMemory properties: " << std::endl;
+    for (uint32_t memoryTypeIdx = 0; memoryTypeIdx != memoryProperties.memoryTypeCount; ++memoryTypeIdx) {
+      m_DebugOutput << "Memory type " << memoryTypeIdx << std::endl
+                    << "\tHeapindex " << memoryProperties.memoryTypes[memoryTypeIdx].heapIndex << std::endl
+                    << "\tFlags " << vk::to_string(memoryProperties.memoryTypes[memoryTypeIdx].propertyFlags)
+                    << std::endl;
+    }
+
+    m_DebugOutput << std::endl;
+
+    for (uint32_t memoryHeapIdx = 0; memoryHeapIdx != memoryProperties.memoryHeapCount; ++memoryHeapIdx) {
+      vk::DeviceSize heapSizeInBytes = memoryProperties.memoryHeaps[memoryHeapIdx].size;
+      auto heapSizeInMegaBytes = heapSizeInBytes / bytesInMegaBytes;
+      m_DebugOutput << "Memory heap " << memoryHeapIdx << std::endl
+                    << "\tSize " << heapSizeInBytes << " bytes (" << heapSizeInMegaBytes << " MB)" << std::endl
+                    << "\tFlags " << vk::to_string(memoryProperties.memoryHeaps[memoryHeapIdx].flags) << std::endl;
+    }
+#endif
 
     // Get device queue family properties
     std::vector<vk::QueueFamilyProperties2> queueFamilyProperties =
@@ -827,11 +849,13 @@ std::tuple<vk::Result, FrameResource> VulkanRenderer::AcquireNextFrameResources(
     return { result, FrameResource() };
   }
 
-  m_FrameResources[currentResourceIdx].m_ImageData.m_ImageIdx = acquireResult.value;
-  m_FrameResources[currentResourceIdx].m_ImageData.m_ImageView =
+  m_FrameResources[currentResourceIdx].m_SwapchainImage.m_ImageIdx = acquireResult.value;
+  m_FrameResources[currentResourceIdx].m_SwapchainImage.m_ImageView =
     m_VulkanParameters.m_Swapchain.m_ImageViews[acquireResult.value];
-  m_FrameResources[currentResourceIdx].m_ImageData.m_ImageWidth = m_VulkanParameters.m_Swapchain.m_ImageExtent.width;
-  m_FrameResources[currentResourceIdx].m_ImageData.m_ImageHeight = m_VulkanParameters.m_Swapchain.m_ImageExtent.height;
+  m_FrameResources[currentResourceIdx].m_SwapchainImage.m_ImageWidth =
+    m_VulkanParameters.m_Swapchain.m_ImageExtent.width;
+  m_FrameResources[currentResourceIdx].m_SwapchainImage.m_ImageHeight =
+    m_VulkanParameters.m_Swapchain.m_ImageExtent.height;
 
   if (m_FrameResources[currentResourceIdx].m_Framebuffer) {
     m_VulkanParameters.m_Device.destroyFramebuffer(m_FrameResources[currentResourceIdx].m_Framebuffer);
@@ -857,12 +881,12 @@ std::tuple<vk::Result, FrameResource> VulkanRenderer::AcquireNextFrameResources(
 vk::Result VulkanRenderer::PresentFrame(FrameResource& frameResources)
 {
   auto presentInfo =
-    vk::PresentInfoKHR(1,                                        // uint32_t waitSemaphoreCount_ = {},
-                       &frameResources.m_DrawToPresentSemaphore, // const vk::Semaphore* pWaitSemaphores_ = {},
-                       1,                                        // uint32_t swapchainCount_ = {},
-                       &m_VulkanParameters.m_Swapchain.m_Handle, // const vk::SwapchainKHR* pSwapchains_ = {},
-                       &frameResources.m_ImageData.m_ImageIdx,   // const uint32_t* pImageIndices_ = {},
-                       nullptr                                   // vk::Result* pResults_ = {}
+    vk::PresentInfoKHR(1,                                           // uint32_t waitSemaphoreCount_ = {},
+                       &frameResources.m_DrawToPresentSemaphore,    // const vk::Semaphore* pWaitSemaphores_ = {},
+                       1,                                           // uint32_t swapchainCount_ = {},
+                       &m_VulkanParameters.m_Swapchain.m_Handle,    // const vk::SwapchainKHR* pSwapchains_ = {},
+                       &frameResources.m_SwapchainImage.m_ImageIdx, // const uint32_t* pImageIndices_ = {},
+                       nullptr                                      // vk::Result* pResults_ = {}
     );
 
   auto presentResult = m_VulkanParameters.m_GraphicsQueue.presentKHR(presentInfo);
@@ -908,7 +932,7 @@ void VulkanRenderer::BeginFrame(FrameResource& frameResources, vk::CommandBuffer
     vk::ImageLayout::ePresentSrcKHR,               // vk::ImageLayout newLayout_ = vk::ImageLayout::eUndefined,
     m_VulkanParameters.m_GraphicsQueueFamilyIdx,   // uint32_t srcQueueFamilyIndex_ = {},
     m_VulkanParameters.m_GraphicsQueueFamilyIdx,   // uint32_t dstQueueFamilyIndex_ = {},
-    m_VulkanParameters.m_Swapchain.m_Images[frameResources.m_ImageData.m_ImageIdx], // vk::Image image_ = {},
+    m_VulkanParameters.m_Swapchain.m_Images[frameResources.m_SwapchainImage.m_ImageIdx], // vk::Image image_ = {},
     subresourceRange // vk::ImageSubresourceRange subresourceRange_ = {}
   );
 
@@ -937,7 +961,7 @@ void VulkanRenderer::EndFrame(FrameResource& frameResources, vk::CommandBuffer c
     vk::ImageLayout::ePresentSrcKHR,               // vk::ImageLayout newLayout_ = vk::ImageLayout::eUndefined,
     m_VulkanParameters.m_GraphicsQueueFamilyIdx,   // uint32_t srcQueueFamilyIndex_ = {},
     m_VulkanParameters.m_GraphicsQueueFamilyIdx,   // uint32_t dstQueueFamilyIndex_ = {},
-    m_VulkanParameters.m_Swapchain.m_Images[frameResources.m_ImageData.m_ImageIdx], // vk::Image image_ = {},
+    m_VulkanParameters.m_Swapchain.m_Images[frameResources.m_SwapchainImage.m_ImageIdx], // vk::Image image_ = {},
     subresourceRange // vk::ImageSubresourceRange subresourceRange_ = {}
   );
 
@@ -1147,27 +1171,9 @@ bool VulkanRenderer::CreatePipeline()
   return true;
 }
 
-std::vector<char> VulkanRenderer::ReadShaderContent(char const* filename)
-{
-  std::vector<char> shaderContent;
-  std::filesystem::path shaderPath = Os::GetExecutableDirectory() / filename;
-  std::ifstream file(shaderPath, std::ios::binary | std::ios::ate);
-  if (!file.is_open()) {
-    std::cerr << "Could not open shader file: " << shaderPath << std::endl;
-    return shaderContent;
-  }
-
-  size_t codeSize = file.tellg();
-  shaderContent.resize(codeSize);
-  file.seekg(0);
-  file.read(shaderContent.data(), codeSize);
-  file.close();
-  return shaderContent;
-}
-
 vk::UniqueShaderModule VulkanRenderer::CreateShaderModule(char const* filename)
 {
-  std::vector<char> code = ReadShaderContent(filename);
+  std::vector<char> code = Os::ReadContentFromBinaryFile(filename);
   if (code.empty()) {
     throw std::runtime_error("Could not read shader file or its empty");
   }
@@ -1367,9 +1373,201 @@ void VulkanRenderer::CopyToLocalBuffer(std::shared_ptr<CopyToLocalBufferJob> tra
   transferJob->SetWait();
 }
 
+void VulkanRenderer::CopyToLocalImage(std::shared_ptr<Core::CopyToLocalImageJob> transferJob,
+                                      vk::CommandBuffer graphicsCommandBuffer,
+                                      vk::CommandBuffer transferCommandBuffer,
+                                      vk::Buffer sourceBuffer,
+                                      vk::DeviceSize sourceOffset)
+{
+  transferCommandBuffer.begin(vk::CommandBufferBeginInfo({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit }, nullptr));
+  auto region = vk::BufferImageCopy(
+    sourceOffset,                                               // vk::DeviceSize bufferOffset_ = {},
+    0,                                                          // uint32_t bufferRowLength_ = {},
+    0,                                                          // uint32_t bufferImageHeight_ = {},
+    vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, // vk::ImageAspectFlags aspectMask_ = {},
+                               0,                               // uint32_t mipLevel_ = {},
+                               0,                               // uint32_t baseArrayLayer_ = {},
+                               1                                // uint32_t layerCount_ = {}
+                               ),                               // vk::ImageSubresourceLayers imageSubresource_ = {},
+    vk::Offset3D(0, 0, 0),                                         // vk::Offset3D imageOffset_ = {},
+    vk::Extent3D(transferJob->GetImageWidth(), transferJob->GetImageHeight(), 1) // vk::Extent3D imageExtent_ = {}
+  );
+
+  auto fromUndefinedToTransferDstLayoutBarrier = vk::ImageMemoryBarrier(
+    {},                                          // vk::AccessFlags srcAccessMask_ = {},
+    vk::AccessFlagBits::eTransferWrite,          // vk::AccessFlags dstAccessMask_ = {},
+    vk::ImageLayout::eUndefined,                 // vk::ImageLayout oldLayout_ = vk::ImageLayout::eUndefined,
+    vk::ImageLayout::eTransferDstOptimal,        // vk::ImageLayout newLayout_ = vk::ImageLayout::eUndefined,
+    m_VulkanParameters.m_TransferQueueFamilyIdx, // uint32_t srcQueueFamilyIndex_ = {},
+    m_VulkanParameters.m_TransferQueueFamilyIdx, // uint32_t dstQueueFamilyIndex_ = {},
+    transferJob->GetDestinationImage(),          // vk::Image image_ = {},
+    vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, // vk::ImageAspectFlags aspectMask_ = {},
+                              0,                               // uint32_t baseMipLevel_ = {},
+                              1,                               // uint32_t levelCount_ = {},
+                              0,                               // uint32_t baseArrayLayer_ = {},
+                              1                                // uint32_t layerCount_ = {}
+                              )                                // vk::ImageSubresourceRange subresourceRange_ = {}
+  );
+
+  transferCommandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                        vk::PipelineStageFlagBits::eTransfer,
+                                        {},
+                                        nullptr,
+                                        nullptr,
+                                        fromUndefinedToTransferDstLayoutBarrier);
+
+  transferCommandBuffer.copyBufferToImage(
+    sourceBuffer, transferJob->GetDestinationImage(), vk::ImageLayout::eTransferDstOptimal, region);
+
+  auto releaseBarrier = vk::ImageMemoryBarrier(
+    vk::AccessFlagBits::eTransferWrite,          // vk::AccessFlags srcAccessMask_ = {},
+    {},                                          // vk::AccessFlags dstAccessMask_ = {},
+    vk::ImageLayout::eTransferDstOptimal,        // vk::ImageLayout oldLayout_ = vk::ImageLayout::eUndefined,
+    transferJob->GetDestinationLayout(),         // vk::ImageLayout newLayout_ = vk::ImageLayout::eUndefined,
+    m_VulkanParameters.m_TransferQueueFamilyIdx, // uint32_t srcQueueFamilyIndex_ = {},
+    m_VulkanParameters.m_GraphicsQueueFamilyIdx, // uint32_t dstQueueFamilyIndex_ = {},
+    transferJob->GetDestinationImage(),          // vk::Image image_ = {},
+    vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, // vk::ImageAspectFlags aspectMask_ = {},
+                              0,                               // uint32_t baseMipLevel_ = {},
+                              1,                               // uint32_t levelCount_ = {},
+                              0,                               // uint32_t baseArrayLayer_ = {},
+                              1                                // uint32_t layerCount_ = {}
+                              )                                // vk::ImageSubresourceRange subresourceRange_ = {}
+  );
+  transferCommandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                        vk::PipelineStageFlagBits::eBottomOfPipe,
+                                        {},
+                                        nullptr,
+                                        nullptr,
+                                        releaseBarrier);
+
+  transferCommandBuffer.end();
+  auto transferSubmitInfo =
+    vk::SubmitInfo(0,                      // uint32_t waitSemaphoreCount_ = {},
+                   nullptr,                // const vk::Semaphore* pWaitSemaphores_ = {},
+                   nullptr,                // const vk::PipelineStageFlags* pWaitDstStageMask_ = {},
+                   1,                      // uint32_t commandBufferCount_ = {},
+                   &transferCommandBuffer, // const vk::CommandBuffer* pCommandBuffers_ = {},
+                   1,                      // uint32_t signalSemaphoreCount_ = {},
+                   &transferJob->GetFromTransferToGraphicsSemaphore() // const vk::Semaphore* pSignalSemaphores_ = {}
+    );
+  SubmitToTransferQueue(transferSubmitInfo, nullptr);
+
+  graphicsCommandBuffer.begin(vk::CommandBufferBeginInfo({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit }, nullptr));
+
+  auto acquireBarrier = vk::ImageMemoryBarrier(
+    {},                                          // vk::AccessFlags srcAccessMask_ = {},
+    transferJob->GetDestinationAccessFlags(),    // vk::AccessFlags dstAccessMask_ = {},
+    vk::ImageLayout::eTransferDstOptimal,        // vk::ImageLayout oldLayout_ = vk::ImageLayout::eUndefined,
+    transferJob->GetDestinationLayout(),         // vk::ImageLayout newLayout_ = vk::ImageLayout::eUndefined,
+    m_VulkanParameters.m_TransferQueueFamilyIdx, // uint32_t srcQueueFamilyIndex_ = {},
+    m_VulkanParameters.m_GraphicsQueueFamilyIdx, // uint32_t dstQueueFamilyIndex_ = {},
+    transferJob->GetDestinationImage(),          // vk::Image image_ = {},
+    vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, // vk::ImageAspectFlags aspectMask_ = {},
+                              0,                               // uint32_t baseMipLevel_ = {},
+                              1,                               // uint32_t levelCount_ = {},
+                              0,                               // uint32_t baseArrayLayer_ = {},
+                              1                                // uint32_t layerCount_ = {}
+                              )                                // vk::ImageSubresourceRange subresourceRange_ = {}
+  );
+  graphicsCommandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                        transferJob->GetDestinationPipelineStageFlags(),
+                                        {},
+                                        nullptr,
+                                        nullptr,
+                                        acquireBarrier);
+
+  graphicsCommandBuffer.end();
+
+  vk::PipelineStageFlags waitStage[] = { transferJob->GetDestinationPipelineStageFlags() };
+  auto graphicsSubmitInfo =
+    vk::SubmitInfo(1,                                                  // uint32_t waitSemaphoreCount_ = {},
+                   &transferJob->GetFromTransferToGraphicsSemaphore(), // const vk::Semaphore* pWaitSemaphores_ = {},
+                   waitStage,              // const vk::PipelineStageFlags* pWaitDstStageMask_ = {},
+                   1,                      // uint32_t commandBufferCount_ = {},
+                   &graphicsCommandBuffer, // const vk::CommandBuffer* pCommandBuffers_ = {},
+                   0,                      // uint32_t signalSemaphoreCount_ = {},
+                   nullptr                 // const vk::Semaphore* pSignalSemaphores_ = {}
+    );
+
+  SubmitToGraphicsQueue(graphicsSubmitInfo, transferJob->GetTransferCompletedFence());
+  transferJob->SetWait();
+}
+
 vk::DeviceSize VulkanRenderer::GetNonCoherentAtomSize() const
 {
   vk::PhysicalDeviceProperties2 properties = m_VulkanParameters.m_PhysicalDevice.getProperties2();
   return properties.properties.limits.nonCoherentAtomSize;
 }
+
+ImageData VulkanRenderer::CreateImage(uint32_t width,
+                                      uint32_t height,
+                                      vk::ImageUsageFlags usage,
+                                      vk::MemoryPropertyFlags requiredProperties)
+{
+  vk::Format imageFormat = vk::Format::eR8G8B8A8Unorm;
+  auto imageCreateInfo =
+    vk::ImageCreateInfo({},                             // vk::ImageCreateFlags flags_ = {},
+                        vk::ImageType::e2D,             // vk::ImageType imageType_ = vk::ImageType::e1D,
+                        imageFormat,                    // vk::Format format_ = vk::Format::eUndefined,
+                        vk::Extent3D(width, height, 1), // vk::Extent3D extent_ = {},
+                        1,                              // uint32_t mipLevels_ = {},
+                        1,                              // uint32_t arrayLayers_ = {},
+                        vk::SampleCountFlagBits::e1, // vk::SampleCountFlagBits samples_ = vk::SampleCountFlagBits::e1,
+                        vk::ImageTiling::eOptimal,   // vk::ImageTiling tiling_ = vk::ImageTiling::eOptimal,
+                        usage,                       // vk::ImageUsageFlags usage_ = {},
+                        vk::SharingMode::eExclusive, // vk::SharingMode sharingMode_ = vk::SharingMode::eExclusive,
+                        0,                           // uint32_t queueFamilyIndexCount_ = {},
+                        nullptr,                     // const uint32_t* pQueueFamilyIndices_ = {},
+                        vk::ImageLayout::eUndefined  // vk::ImageLayout initialLayout_ = vk::ImageLayout::eUndefined
+    );
+
+  ImageData image;
+  image.m_Handle = m_VulkanParameters.m_Device.createImage(imageCreateInfo);
+  image.m_Width = width;
+  image.m_Height = height;
+
+  vk::MemoryRequirements memoryRequirements = m_VulkanParameters.m_Device.getImageMemoryRequirements(image.m_Handle);
+  vk::PhysicalDeviceMemoryProperties memoryProperties = m_VulkanParameters.m_PhysicalDevice.getMemoryProperties();
+  for (uint32_t i = 0; i != memoryProperties.memoryTypeCount; ++i) {
+    if (memoryRequirements.memoryTypeBits & (1 << i)
+        && (memoryProperties.memoryTypes[i].propertyFlags & requiredProperties)) {
+      auto allocateInfo = vk::MemoryAllocateInfo(memoryRequirements.size, // vk::DeviceSize allocationSize_ = {},
+                                                 i                        // uint32_t memoryTypeIndex_ = {}
+      );
+
+      image.m_Memory = m_VulkanParameters.m_Device.allocateMemory(allocateInfo);
+      break;
+    }
+  }
+
+  m_VulkanParameters.m_Device.bindImageMemory(image.m_Handle, image.m_Memory, vk::DeviceSize(0));
+
+  auto imageViewCreateInfo = vk::ImageViewCreateInfo(
+    {},                     // vk::ImageViewCreateFlags flags_ = {},
+    image.m_Handle,         // vk::Image image_ = {},
+    vk::ImageViewType::e2D, // vk::ImageViewType viewType_ = vk::ImageViewType::e1D,
+    imageFormat,            // vk::Format format_ = vk::Format::eUndefined,
+    vk::ComponentMapping(vk::ComponentSwizzle::eIdentity,
+                         vk::ComponentSwizzle::eIdentity,
+                         vk::ComponentSwizzle::eIdentity,
+                         vk::ComponentSwizzle::eIdentity), // vk::ComponentMapping components_ = {},
+    vk::ImageSubresourceRange(
+      vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1) // vk::ImageSubresourceRange subresourceRange_ = {}
+  );
+  image.m_View = m_VulkanParameters.m_Device.createImageView(imageViewCreateInfo);
+  return image;
+}
+
+void VulkanRenderer::FreeImage(ImageData& imageData)
+{
+  m_VulkanParameters.m_Device.waitIdle();
+  if (imageData.m_Memory) {
+    m_VulkanParameters.m_Device.freeMemory(imageData.m_Memory);
+  }
+  if (imageData.m_Handle) {
+    m_VulkanParameters.m_Device.destroyImage(imageData.m_Handle);
+  }
+}
+
 } // namespace Core

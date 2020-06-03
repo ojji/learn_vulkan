@@ -8,6 +8,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "CopyToLocalBufferJob.h"
+#include "CopyToLocalImageJob.h"
 #include "os/Typedefs.h"
 #include "os/Window.h"
 
@@ -19,12 +20,21 @@ struct FrameStat
   uint64_t m_EndFrameTimestamp;
 };
 
-struct ImageData
+struct SwapchainImage
 {
   uint32_t m_ImageIdx;
   vk::ImageView m_ImageView;
   uint32_t m_ImageWidth;
   uint32_t m_ImageHeight;
+};
+
+struct ImageData
+{
+  vk::Image m_Handle;
+  uint32_t m_Width;
+  uint32_t m_Height;
+  vk::DeviceMemory m_Memory;
+  vk::ImageView m_View;
 };
 
 struct FrameResource
@@ -36,11 +46,11 @@ struct FrameResource
   vk::Semaphore m_DrawToPresentSemaphore;
   vk::CommandBuffer m_CommandBuffer;
   vk::QueryPool m_QueryPool;
-  ImageData m_ImageData;
+  SwapchainImage m_SwapchainImage;
   FrameStat m_FrameStat;
 };
 
-struct SwapchainData
+struct Swapchain
 {
   vk::SwapchainKHR m_Handle;
   vk::Format m_Format;
@@ -74,7 +84,7 @@ struct VulkanParameters
   QueueFamilyIdx m_TransferQueueFamilyIdx;
   vk::SurfaceKHR m_PresentSurface;
   vk::SurfaceCapabilitiesKHR m_SurfaceCapabilities;
-  SwapchainData m_Swapchain;
+  Swapchain m_Swapchain;
   bool m_VsyncEnabled;
   vk::RenderPass m_RenderPass;
   vk::Pipeline m_Pipeline;
@@ -97,9 +107,14 @@ public:
   [[nodiscard]] bool CanRender() const { return m_CanRender; }
 
   bool Initialize(Os::WindowParameters windowParameters);
-  void FreeBuffer(BufferData& vertexBuffer);
-
   BufferData CreateBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags requiredProperties);
+  void FreeBuffer(BufferData& vertexBuffer);
+  ImageData CreateImage(uint32_t width,
+                        uint32_t height,
+                        vk::ImageUsageFlags usage,
+                        vk::MemoryPropertyFlags requiredProperties);
+
+  void FreeImage(ImageData& imageData);
 
   void SubmitToGraphicsQueue(vk::SubmitInfo& submitInfo, vk::Fence fence);
   void SubmitToTransferQueue(vk::SubmitInfo& submitInfo, vk::Fence fence);
@@ -121,6 +136,12 @@ public:
   bool RecreateSwapchain();
   double GetFrameTimeInMs(FrameStat const& frameStat);
   void CopyToLocalBuffer(std::shared_ptr<Core::CopyToLocalBufferJob> transferJob,
+                         vk::CommandBuffer graphicsCommandBuffer,
+                         vk::CommandBuffer transferCommandBuffer,
+                         vk::Buffer sourceBuffer,
+                         vk::DeviceSize sourceOffset);
+
+  void CopyToLocalImage(std::shared_ptr<Core::CopyToLocalImageJob> transferJob,
                          vk::CommandBuffer graphicsCommandBuffer,
                          vk::CommandBuffer transferCommandBuffer,
                          vk::Buffer sourceBuffer,
@@ -160,7 +181,6 @@ private:
 
   vk::UniqueShaderModule CreateShaderModule(char const* filename);
   vk::UniquePipelineLayout CreatePipelineLayout();
-  static std::vector<char> VulkanRenderer::ReadShaderContent(char const* filename);
 
   bool CreateSwapchain();
   bool CreateSwapchainImageViews();

@@ -1,4 +1,6 @@
 #include "core/CopyToLocalBufferJob.h"
+#include "core/CopyToLocalImageJob.h"
+#include "core/Transition.h"
 #include "core/VulkanFunctions.h"
 #include "core/VulkanRenderer.h"
 #include "os/Common.h"
@@ -10,39 +12,11 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <tchar.h>
 #include <thread>
 #include <vector>
-
-
-class Transition
-{
-public:
-  Transition(){};
-  Transition(std::array<float, 4> firstColor, std::array<float, 4> secondColor, float periodInSeconds) :
-    m_FirstColor(firstColor),
-    m_SecondColor(secondColor),
-    m_PeriodInSeconds(periodInSeconds)
-  {}
-
-  std::array<float, 4> GetValue(float timeElapsedInMs)
-  {
-    float const pi = std::atanf(1) * 4.0f;
-    float remainder = std::fmod(timeElapsedInMs, m_PeriodInSeconds * 2.0f * 1000.0f);
-    float x = 0.5f * sinf((pi * remainder * (1.0f / (m_PeriodInSeconds * 1000.0f))) - pi * 0.5f) + 0.5f;
-    float r = m_FirstColor[0] + x * (m_SecondColor[0] - m_FirstColor[0]);
-    float g = m_FirstColor[1] + x * (m_SecondColor[1] - m_FirstColor[1]);
-    float b = m_FirstColor[2] + x * (m_SecondColor[2] - m_FirstColor[2]);
-    float a = m_FirstColor[3] + x * (m_SecondColor[3] - m_FirstColor[3]);
-    return std::array<float, 4>({ r, g, b, a });
-  }
-
-private:
-  std::array<float, 4> m_FirstColor;
-  std::array<float, 4> m_SecondColor;
-  float m_PeriodInSeconds;
-};
 
 class SampleApp
 {
@@ -99,7 +73,7 @@ public:
 
         if (firstFrame) {
           {
-            auto transferJob = std::shared_ptr<Core::CopyToLocalBufferJob>(
+            auto transferJob = std::shared_ptr<Core::CopyToLocalJob>(
               new Core::CopyToLocalBufferJob(app->m_VulkanRenderer.get(),
                                              vertices.data(),
                                              verticesSize,
@@ -114,6 +88,32 @@ public:
             }
 
             transferJob->WaitComplete();
+
+            // read texture data
+            uint32_t textureWidth, textureHeight;
+            std::vector<char> textureData = Os::LoadTextureData("assets/intel-truck.png", textureWidth, textureHeight);
+
+            Core::ImageData texture = app->m_VulkanRenderer->CreateImage(
+              textureWidth,
+              textureHeight,
+              { vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst },
+              { vk::MemoryPropertyFlagBits::eDeviceLocal });
+
+            auto textureCopyJob = std::shared_ptr<Core::CopyToLocalJob>(
+              new Core::CopyToLocalImageJob(app->m_VulkanRenderer.get(),
+                                            textureData.data(),
+                                            textureData.size(),
+                                            texture.m_Width,
+                                            texture.m_Height,
+                                            texture.m_Handle,
+                                            vk::ImageLayout::eShaderReadOnlyOptimal,
+                                            vk::AccessFlagBits::eShaderRead,
+                                            vk::PipelineStageFlagBits::eFragmentShader));
+            {
+              std::lock_guard<std::mutex> lock(app->m_TransferQueueCriticalSection);
+              app->m_TransferQueue.push_back(textureCopyJob);
+            }
+            textureCopyJob->WaitComplete();
             firstFrame = false;
           }
         }
@@ -135,9 +135,9 @@ public:
           app->m_VulkanRenderer->GetRenderPass(), // vk::RenderPass renderPass_ = {},
           frameResources.m_Framebuffer,           // vk::Framebuffer framebuffer_ = {},
           vk::Rect2D(vk::Offset2D(0, 0),
-                     vk::Extent2D(frameResources.m_ImageData.m_ImageWidth,
-                                  frameResources.m_ImageData.m_ImageHeight)), // vk::Rect2D renderArea_ = {},
-          1,                                                                  // uint32_t clearValueCount_ = {},
+                     vk::Extent2D(frameResources.m_SwapchainImage.m_ImageWidth,
+                                  frameResources.m_SwapchainImage.m_ImageHeight)), // vk::Rect2D renderArea_ = {},
+          1,                                                                       // uint32_t clearValueCount_ = {},
           &clearValue // const vk::ClearValue* pClearValues_ = {}
         );
 
@@ -145,19 +145,19 @@ public:
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, app->m_VulkanRenderer->GetPipeline());
 
         auto viewport =
-          vk::Viewport(0.0f,                                                         // float x_ = {},
-                       0.0f,                                                         // float y_ = {},
-                       static_cast<float>(frameResources.m_ImageData.m_ImageWidth),  // float width_ = {},
-                       static_cast<float>(frameResources.m_ImageData.m_ImageHeight), // float height_ = {},
-                       0.0f,                                                         // float minDepth_ = {},
-                       1.0f                                                          // float maxDepth_ = {}
+          vk::Viewport(0.0f,                                                              // float x_ = {},
+                       0.0f,                                                              // float y_ = {},
+                       static_cast<float>(frameResources.m_SwapchainImage.m_ImageWidth),  // float width_ = {},
+                       static_cast<float>(frameResources.m_SwapchainImage.m_ImageHeight), // float height_ = {},
+                       0.0f,                                                              // float minDepth_ = {},
+                       1.0f                                                               // float maxDepth_ = {}
           );
 
         commandBuffer.setViewport(0, viewport);
 
-        auto scissor =
-          vk::Rect2D(vk::Offset2D(0, 0),
-                     vk::Extent2D(frameResources.m_ImageData.m_ImageWidth, frameResources.m_ImageData.m_ImageHeight));
+        auto scissor = vk::Rect2D(
+          vk::Offset2D(0, 0),
+          vk::Extent2D(frameResources.m_SwapchainImage.m_ImageWidth, frameResources.m_SwapchainImage.m_ImageHeight));
         commandBuffer.setScissor(0, scissor);
         commandBuffer.bindVertexBuffers(0, vertexBuffer.m_Handle, vk::DeviceSize(0));
         commandBuffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
@@ -182,7 +182,8 @@ public:
         case vk::Result::eSuccess: {
           double frameTimeInMs = app->m_VulkanRenderer->GetFrameTimeInMs(frameResources.m_FrameStat);
           double fps = 1.0 / (frameTimeInMs / 1'000);
-          std::cout << "GPU time: " << frameTimeInMs << " ms (" << fps << " fps)" << std::endl;
+          UNREFERENCED_PARAMETER(fps);
+          // std::cout << "GPU time: " << frameTimeInMs << " ms (" << fps << " fps)" << std::endl;
         } break;
         case vk::Result::eErrorOutOfDateKHR:
         case vk::Result::eSuboptimalKHR: {
@@ -230,7 +231,7 @@ public:
     uintptr_t currentPtr = reinterpret_cast<uintptr_t>(stagingBufferPtr);
     vk::DeviceSize bytesInUse = vk::DeviceSize(0);
 
-    std::shared_ptr<Core::CopyToLocalBufferJob> currentJob;
+    std::shared_ptr<Core::CopyToLocalJob> currentJob;
     while (app->m_IsRunning) {
       if (app->m_TransferQueue.size() > 0) {
         currentJob = nullptr;
@@ -259,8 +260,25 @@ public:
 
           app->m_VulkanRenderer->GetDevice().flushMappedMemoryRanges(mappedMemoryRange);
 
-          app->m_VulkanRenderer->CopyToLocalBuffer(
-            currentJob, graphicsCommandBuffer, transferCommandBuffer, stagingBuffer.m_Handle, bytesInUse);
+          switch (currentJob->GetJobType()) {
+          case Core::CopyFlags::ToLocalBuffer: {
+            app->m_VulkanRenderer->CopyToLocalBuffer(std::static_pointer_cast<Core::CopyToLocalBufferJob>(currentJob),
+                                                     graphicsCommandBuffer,
+                                                     transferCommandBuffer,
+                                                     stagingBuffer.m_Handle,
+                                                     bytesInUse);
+          } break;
+          case Core::CopyFlags::ToLocalImage: {
+            app->m_VulkanRenderer->CopyToLocalImage(std::static_pointer_cast<Core::CopyToLocalImageJob>(currentJob),
+                                                    graphicsCommandBuffer,
+                                                    transferCommandBuffer,
+                                                    stagingBuffer.m_Handle,
+                                                    bytesInUse);
+          } break;
+          default: {
+            throw std::runtime_error("Unreachable code reached. Thats a feat!");
+          } break;
+          }
 
           bytesInUse += currentJob->GetSize();
         }
@@ -279,7 +297,7 @@ public:
   SampleApp(std::ostream& debugStream) :
     m_Window(new Os::Window()),
     m_VulkanRenderer(new Core::VulkanRenderer(debugStream, SampleApp::MAX_FRAMES_IN_FLIGHT)),
-    m_Transition(Transition())
+    m_Transition(Core::Transition())
   {}
 
   virtual ~SampleApp() {}
@@ -296,7 +314,7 @@ public:
 
     std::array<float, 4> color = { (85.0f / 255.0f), (87.0f / 255.0f), (112.0f / 255.0f), 0.0f };
     std::array<float, 4> otherColor = { (179.0f / 255.0f), (147.0f / 255.0f), (29.0f / 255.0f), 0.0f };
-    m_Transition = Transition(color, otherColor, 1.0f);
+    m_Transition = Core::Transition(color, otherColor, 1.0f);
 
     QueryPerformanceCounter(&m_StartTime);
     QueryPerformanceFrequency(&m_Frequency);
@@ -336,8 +354,8 @@ private:
   static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 3;
   std::unique_ptr<Os::Window> m_Window;
   std::unique_ptr<Core::VulkanRenderer> m_VulkanRenderer;
-  std::vector<std::shared_ptr<Core::CopyToLocalBufferJob>> m_TransferQueue;
-  Transition m_Transition;
+  std::vector<std::shared_ptr<Core::CopyToLocalJob>> m_TransferQueue;
+  Core::Transition m_Transition;
   LARGE_INTEGER m_StartTime;
   LARGE_INTEGER m_Frequency;
 
