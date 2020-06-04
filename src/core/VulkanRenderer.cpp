@@ -875,7 +875,7 @@ std::tuple<vk::Result, FrameResource> VulkanRenderer::AcquireNextFrameResources(
                                                     nullptr);
 
   if (acquireResult.result != vk::Result::eSuccess) {
-    return { result, FrameResource() };
+    return { acquireResult.result, FrameResource() };
   }
 
   m_FrameResources[currentResourceIdx].m_SwapchainImage.m_ImageIdx = acquireResult.value;
