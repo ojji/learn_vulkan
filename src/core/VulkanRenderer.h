@@ -62,7 +62,7 @@ struct Swapchain
 struct VertexData
 {
   float m_Position[4];
-  float m_Color[4];
+  float m_TexCoord[2];
 };
 
 struct BufferData
@@ -88,8 +88,12 @@ struct VulkanParameters
   bool m_VsyncEnabled;
   vk::RenderPass m_RenderPass;
   vk::Pipeline m_Pipeline;
+  vk::PipelineLayout m_PipelineLayout;
   vk::QueryPool m_QueryPool;
   float m_TimestampPeriod;
+  vk::DescriptorSetLayout m_DescriptorSetLayout;
+  vk::DescriptorPool m_DescriptorPool;
+  vk::DescriptorSet m_DescriptorSet;
   VulkanParameters();
 };
 
@@ -147,6 +151,11 @@ public:
                          vk::Buffer sourceBuffer,
                          vk::DeviceSize sourceOffset);
 
+  // @ojji: TODO this does not belong here
+  vk::DescriptorSet GetDescriptorSet() { return m_VulkanParameters.m_DescriptorSet; }
+  // @ojji: TODO this does not belong here
+  vk::PipelineLayout GetPipelineLayout() { return m_VulkanParameters.m_PipelineLayout; }
+
 private:
   void Free();
 
@@ -180,10 +189,14 @@ private:
   bool CreateTransferQueue();
 
   vk::UniqueShaderModule CreateShaderModule(char const* filename);
-  vk::UniquePipelineLayout CreatePipelineLayout();
+  vk::PipelineLayout CreatePipelineLayout();
 
   bool CreateSwapchain();
   bool CreateSwapchainImageViews();
+
+  bool CreateDescriptorSetLayout();
+  bool CreateDescriptorPool();
+  bool AllocateDescriptorSet();
 
   bool CreateRenderPass();
   bool CreatePipeline();

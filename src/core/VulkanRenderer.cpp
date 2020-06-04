@@ -28,7 +28,11 @@ VulkanParameters::VulkanParameters() :
   m_Swapchain(Swapchain()),
   m_VsyncEnabled(false),
   m_RenderPass(nullptr),
-  m_Pipeline(nullptr)
+  m_Pipeline(nullptr),
+  m_PipelineLayout(nullptr),
+  m_DescriptorSetLayout(nullptr),
+  m_DescriptorPool(nullptr),
+  m_DescriptorSet(nullptr)
 {}
 
 VulkanRenderer::VulkanRenderer(bool vsyncEnabled, uint32_t frameResourcesCount) :
@@ -53,12 +57,24 @@ void VulkanRenderer::Free()
   if (m_VulkanParameters.m_Device) {
     m_VulkanParameters.m_Device.waitIdle();
 
+    if (m_VulkanParameters.m_DescriptorPool) {
+      m_VulkanParameters.m_Device.destroyDescriptorPool(m_VulkanParameters.m_DescriptorPool);
+    }
+
+    if (m_VulkanParameters.m_DescriptorSetLayout) {
+      m_VulkanParameters.m_Device.destroyDescriptorSetLayout(m_VulkanParameters.m_DescriptorSetLayout);
+    }
+
     if (m_VulkanParameters.m_QueryPool) {
       m_VulkanParameters.m_Device.destroyQueryPool(m_VulkanParameters.m_QueryPool);
     }
 
     for (uint32_t i = 0; i != m_FrameResources.size(); ++i) {
       FreeFrameResource(m_FrameResources[i]);
+    }
+
+    if (m_VulkanParameters.m_PipelineLayout) {
+      m_VulkanParameters.m_Device.destroyPipelineLayout(m_VulkanParameters.m_PipelineLayout);
     }
 
     if (m_VulkanParameters.m_Pipeline) {
@@ -142,6 +158,7 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
 #endif
 
   std::vector<char const*> const requiredExtensions = { VK_KHR_SURFACE_EXTENSION_NAME,
+                                                        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
 #ifdef VK_USE_PLATFORM_WIN32_KHR
                                                         VK_KHR_WIN32_SURFACE_EXTENSION_NAME
 #endif
@@ -186,6 +203,18 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
   }
 
   if (!CreateSwapchain()) {
+    return false;
+  }
+
+  if (!CreateDescriptorSetLayout()) {
+    return false;
+  }
+
+  if (!CreateDescriptorPool()) {
+    return false;
+  }
+
+  if (!AllocateDescriptorSet()) {
     return false;
   }
 
@@ -976,6 +1005,59 @@ void VulkanRenderer::EndFrame(FrameResource& frameResources, vk::CommandBuffer c
   commandBuffer.end();
 }
 
+bool VulkanRenderer::CreateDescriptorSetLayout()
+{
+  auto bindings = std::vector<vk::DescriptorSetLayoutBinding>({ vk::DescriptorSetLayoutBinding(
+    0,                                         // uint32_t binding_ = {},
+    vk::DescriptorType::eCombinedImageSampler, // vk::DescriptorType descriptorType_ = vk::DescriptorType::eSampler,
+    1,                                         // uint32_t descriptorCount_ = {},
+    { vk::ShaderStageFlagBits::eFragment },    // vk::ShaderStageFlags stageFlags_ = {},
+    nullptr                                    // const vk::Sampler* pImmutableSamplers_ = {}
+    ) });
+
+  auto descriptorSetLayoutCreateInfo =
+    vk::DescriptorSetLayoutCreateInfo({}, // vk::DescriptorSetLayoutCreateFlags flags_ = {},
+                                      static_cast<uint32_t>(bindings.size()), // uint32_t bindingCount_ = {},
+                                      bindings.data() // const vk::DescriptorSetLayoutBinding* pBindings_ = {}
+    );
+
+  m_VulkanParameters.m_DescriptorSetLayout =
+    m_VulkanParameters.m_Device.createDescriptorSetLayout(descriptorSetLayoutCreateInfo);
+  return true;
+}
+
+bool VulkanRenderer::CreateDescriptorPool()
+{
+  auto poolSizes = std::vector<vk::DescriptorPoolSize>({ vk::DescriptorPoolSize(
+    vk::DescriptorType::eCombinedImageSampler, // vk::DescriptorType type_ = vk::DescriptorType::eSampler,
+    1                                          // uint32_t descriptorCount_ = {}
+    ) });
+
+  auto descriptorPoolCreateInfo =
+    vk::DescriptorPoolCreateInfo({},                                      // vk::DescriptorPoolCreateFlags flags_ = {},
+                                 1,                                       // uint32_t maxSets_ = {},
+                                 static_cast<uint32_t>(poolSizes.size()), // uint32_t poolSizeCount_ = {},
+                                 poolSizes.data() // const vk::DescriptorPoolSize* pPoolSizes_ = {}
+    );
+
+  m_VulkanParameters.m_DescriptorPool = m_VulkanParameters.m_Device.createDescriptorPool(descriptorPoolCreateInfo);
+  return true;
+}
+
+bool VulkanRenderer::AllocateDescriptorSet()
+{
+  auto descriptorSetAllocateInfo = vk::DescriptorSetAllocateInfo(
+    m_VulkanParameters.m_DescriptorPool,      // vk::DescriptorPool descriptorPool_ = {},
+    1,                                        // uint32_t descriptorSetCount_ = {},
+    &m_VulkanParameters.m_DescriptorSetLayout // const vk::DescriptorSetLayout* pSetLayouts_ = {}
+  );
+
+  std::vector<vk::DescriptorSet> descriptorSets =
+    m_VulkanParameters.m_Device.allocateDescriptorSets(descriptorSetAllocateInfo);
+  m_VulkanParameters.m_DescriptorSet = descriptorSets[0];
+  return true;
+}
+
 bool VulkanRenderer::CreateRenderPass()
 {
   auto attachments = std::vector<vk::AttachmentDescription>({ vk::AttachmentDescription(
@@ -1063,12 +1145,11 @@ bool VulkanRenderer::CreatePipeline()
         vk::Format::eR32G32B32A32Sfloat,             // vk::Format format_ = vk::Format::eUndefined,
         offsetof(VertexData, VertexData::m_Position) // uint32_t offset_ = {}
         ),
-      vk::VertexInputAttributeDescription(
-        1,                                        // uint32_t location_ = {},
-        vertexBindingDescriptions[0].binding,     // uint32_t binding_ = {},
-        vk::Format::eR32G32B32A32Sfloat,          // vk::Format format_ = vk::Format::eUndefined,
-        offsetof(VertexData, VertexData::m_Color) // uint32_t offset_ = {}
-        ) });
+      vk::VertexInputAttributeDescription(1,                                    // uint32_t location_ = {},
+                                          vertexBindingDescriptions[0].binding, // uint32_t binding_ = {},
+                                          vk::Format::eR32G32Sfloat, // vk::Format format_ = vk::Format::eUndefined,
+                                          offsetof(VertexData, VertexData::m_TexCoord) // uint32_t offset_ = {}
+                                          ) });
 
   auto vertexInputState = vk::PipelineVertexInputStateCreateInfo(
     {}, // vk::PipelineVertexInputStateCreateFlags flags_ = {}, reserved
@@ -1145,26 +1226,26 @@ bool VulkanRenderer::CreatePipeline()
                                        dynamicStates.data() // const vk::DynamicState* pDynamicStates_ = {}
     );
 
-  vk::UniquePipelineLayout layout = CreatePipelineLayout();
+  m_VulkanParameters.m_PipelineLayout = CreatePipelineLayout();
 
   auto pipelineCreateInfo = vk::GraphicsPipelineCreateInfo(
     {},                                         // vk::PipelineCreateFlags flags_ = {},
     static_cast<uint32_t>(shaderStages.size()), // uint32_t stageCount_ = {},
     shaderStages.data(),                        // const vk::PipelineShaderStageCreateInfo* pStages_ = {},
-    &vertexInputState,               // const vk::PipelineVertexInputStateCreateInfo* pVertexInputState_ = {},
-    &inputAssemblyState,             // const vk::PipelineInputAssemblyStateCreateInfo* pInputAssemblyState_ = {},
-    nullptr,                         // const vk::PipelineTessellationStateCreateInfo* pTessellationState_ = {},
-    &viewPortState,                  // const vk::PipelineViewportStateCreateInfo* pViewportState_ = {},
-    &rasterizationState,             // const vk::PipelineRasterizationStateCreateInfo* pRasterizationState_ = {},
-    &multisampleState,               // const vk::PipelineMultisampleStateCreateInfo* pMultisampleState_ = {},
-    nullptr,                         // const vk::PipelineDepthStencilStateCreateInfo* pDepthStencilState_ = {},
-    &colorBlendState,                // const vk::PipelineColorBlendStateCreateInfo* pColorBlendState_ = {},
-    &dynamicState,                   // const vk::PipelineDynamicStateCreateInfo* pDynamicState_ = {},
-    layout.get(),                    // vk::PipelineLayout layout_ = {},
-    m_VulkanParameters.m_RenderPass, // vk::RenderPass renderPass_ = {},
-    0,                               // uint32_t subpass_ = {},
-    nullptr,                         // vk::Pipeline basePipelineHandle_ = {},
-    -1                               // int32_t basePipelineIndex_ = {}
+    &vertexInputState,                   // const vk::PipelineVertexInputStateCreateInfo* pVertexInputState_ = {},
+    &inputAssemblyState,                 // const vk::PipelineInputAssemblyStateCreateInfo* pInputAssemblyState_ = {},
+    nullptr,                             // const vk::PipelineTessellationStateCreateInfo* pTessellationState_ = {},
+    &viewPortState,                      // const vk::PipelineViewportStateCreateInfo* pViewportState_ = {},
+    &rasterizationState,                 // const vk::PipelineRasterizationStateCreateInfo* pRasterizationState_ = {},
+    &multisampleState,                   // const vk::PipelineMultisampleStateCreateInfo* pMultisampleState_ = {},
+    nullptr,                             // const vk::PipelineDepthStencilStateCreateInfo* pDepthStencilState_ = {},
+    &colorBlendState,                    // const vk::PipelineColorBlendStateCreateInfo* pColorBlendState_ = {},
+    &dynamicState,                       // const vk::PipelineDynamicStateCreateInfo* pDynamicState_ = {},
+    m_VulkanParameters.m_PipelineLayout, // vk::PipelineLayout layout_ = {},
+    m_VulkanParameters.m_RenderPass,     // vk::RenderPass renderPass_ = {},
+    0,                                   // uint32_t subpass_ = {},
+    nullptr,                             // vk::Pipeline basePipelineHandle_ = {},
+    -1                                   // int32_t basePipelineIndex_ = {}
   );
 
   m_VulkanParameters.m_Pipeline = m_VulkanParameters.m_Device.createGraphicsPipeline(nullptr, pipelineCreateInfo);
@@ -1186,17 +1267,17 @@ vk::UniqueShaderModule VulkanRenderer::CreateShaderModule(char const* filename)
   return m_VulkanParameters.m_Device.createShaderModuleUnique(shaderModuleCreateInfo);
 }
 
-vk::UniquePipelineLayout VulkanRenderer::CreatePipelineLayout()
+vk::PipelineLayout VulkanRenderer::CreatePipelineLayout()
 {
-  auto pipelineLayoutCreateInfo =
-    vk::PipelineLayoutCreateInfo({},      // vk::PipelineLayoutCreateFlags flags_ = {}, reserved
-                                 0,       // uint32_t setLayoutCount_ = {},
-                                 nullptr, // const vk::DescriptorSetLayout* pSetLayouts_ = {},
-                                 0,       // uint32_t pushConstantRangeCount_ = {},
-                                 nullptr  // const vk::PushConstantRange* pPushConstantRanges_ = {}
-    );
+  auto pipelineLayoutCreateInfo = vk::PipelineLayoutCreateInfo(
+    {},                                        // vk::PipelineLayoutCreateFlags flags_ = {}, reserved
+    1,                                         // uint32_t setLayoutCount_ = {},
+    &m_VulkanParameters.m_DescriptorSetLayout, // const vk::DescriptorSetLayout* pSetLayouts_ = {},
+    0,                                         // uint32_t pushConstantRangeCount_ = {},
+    nullptr                                    // const vk::PushConstantRange* pPushConstantRanges_ = {}
+  );
 
-  return m_VulkanParameters.m_Device.createPipelineLayoutUnique(pipelineLayoutCreateInfo);
+  return m_VulkanParameters.m_Device.createPipelineLayout(pipelineLayoutCreateInfo);
 }
 
 bool VulkanRenderer::RecreateSwapchain()
@@ -1389,7 +1470,7 @@ void VulkanRenderer::CopyToLocalImage(std::shared_ptr<Core::CopyToLocalImageJob>
                                0,                               // uint32_t baseArrayLayer_ = {},
                                1                                // uint32_t layerCount_ = {}
                                ),                               // vk::ImageSubresourceLayers imageSubresource_ = {},
-    vk::Offset3D(0, 0, 0),                                         // vk::Offset3D imageOffset_ = {},
+    vk::Offset3D(0, 0, 0),                                      // vk::Offset3D imageOffset_ = {},
     vk::Extent3D(transferJob->GetImageWidth(), transferJob->GetImageHeight(), 1) // vk::Extent3D imageExtent_ = {}
   );
 

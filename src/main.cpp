@@ -26,10 +26,10 @@ public:
     SampleApp* app = reinterpret_cast<SampleApp*>(param);
 
     std::vector<Core::VertexData> vertices = {
-      Core::VertexData{ { -0.7f, 0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
-      Core::VertexData{ { 0.7f, 0.7f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
-      Core::VertexData{ { -0.7f, -0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f, 1.0f, 1.0f } },
-      Core::VertexData{ { 0.7f, -0.7f, 0.0f, 1.0f }, { 0.3f, 0.3f, 0.3f, 1.0f } }
+      Core::VertexData{ { -0.7f, 0.7f, 0.0f, 1.0f }, { 0.0f, 1.0f } }, // bottom left
+      Core::VertexData{ { 0.7f, 0.7f, 0.0f, 1.0f }, { 1.0f, 1.0f } }, // bottom right
+      Core::VertexData{ { -0.7f, -0.7f, 0.0f, 1.0f }, { 0.0f, 0.0f } }, // top left
+      Core::VertexData{ { 0.7f, -0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f } } // top right
     };
 
     vk::DeviceSize verticesSize = static_cast<uint32_t>(vertices.size()) * sizeof(Core::VertexData);
@@ -47,6 +47,28 @@ public:
     for (uint32_t idx = 0; idx != app->MAX_FRAMES_IN_FLIGHT; ++idx) {
       commandBuffers[idx] = app->m_VulkanRenderer->AllocateCommandBuffer(commandPools[idx]);
     }
+
+    // create sampler
+    auto samplerCreateInfo = vk::SamplerCreateInfo(
+      {},                                   // vk::SamplerCreateFlags flags_ = {},
+      vk::Filter::eLinear,                  // vk::Filter magFilter_ = vk::Filter::eNearest,
+      vk::Filter::eLinear,                  // vk::Filter minFilter_ = vk::Filter::eNearest,
+      vk::SamplerMipmapMode::eNearest,      // vk::SamplerMipmapMode mipmapMode_ = vk::SamplerMipmapMode::eNearest,
+      vk::SamplerAddressMode::eClampToEdge, // vk::SamplerAddressMode addressModeU_ = vk::SamplerAddressMode::eRepeat,
+      vk::SamplerAddressMode::eClampToEdge, // vk::SamplerAddressMode addressModeV_ = vk::SamplerAddressMode::eRepeat,
+      vk::SamplerAddressMode::eClampToEdge, // vk::SamplerAddressMode addressModeW_ = vk::SamplerAddressMode::eRepeat,
+      0.0f,                                 // float mipLodBias_ = {},
+      VK_FALSE,                             // vk::Bool32 anisotropyEnable_ = {},
+      1.0f,                                 // float maxAnisotropy_ = {},
+      VK_FALSE,                             // vk::Bool32 compareEnable_ = {},
+      vk::CompareOp::eAlways,               // vk::CompareOp compareOp_ = vk::CompareOp::eNever,
+      0.0f,                                 // float minLod_ = {},
+      0.0f,                                 // float maxLod_ = {},
+      vk::BorderColor::eFloatTransparentBlack, // vk::BorderColor borderColor_ =
+                                               // vk::BorderColor::eFloatTransparentBlack,
+      VK_FALSE                                 // vk::Bool32 unnormalizedCoordinates_ = {}
+    );
+    vk::Sampler sampler = app->m_VulkanRenderer->GetDevice().createSampler(samplerCreateInfo);
 
     app->m_VulkanRenderer->InitializeFrameResources();
     bool firstFrame = true;
@@ -91,7 +113,7 @@ public:
 
             // read texture data
             uint32_t textureWidth, textureHeight;
-            std::vector<char> textureData = Os::LoadTextureData("assets/intel-truck.png", textureWidth, textureHeight);
+            std::vector<char> textureData = Os::LoadTextureData("assets/Avatar_cat.png", textureWidth, textureHeight);
 
             Core::ImageData texture = app->m_VulkanRenderer->CreateImage(
               textureWidth,
@@ -114,6 +136,25 @@ public:
               app->m_TransferQueue.push_back(textureCopyJob);
             }
             textureCopyJob->WaitComplete();
+
+            auto imageInfo = vk::DescriptorImageInfo(
+              sampler,                                // vk::Sampler sampler_ = {},
+              texture.m_View,                         // vk::ImageView imageView_ = {},
+              vk::ImageLayout::eShaderReadOnlyOptimal // vk::ImageLayout imageLayout_ = vk::ImageLayout::eUndefined
+            );
+
+            vk::WriteDescriptorSet descriptorWrite =
+              vk::WriteDescriptorSet(app->m_VulkanRenderer->GetDescriptorSet(), // vk::DescriptorSet dstSet_ = {},
+                                     0,                                         // uint32_t dstBinding_ = {},
+                                     0,                                         // uint32_t dstArrayElement_ = {},
+                                     1,                                         // uint32_t descriptorCount_ = {},
+                                     vk::DescriptorType::eCombinedImageSampler, // vk::DescriptorType descriptorType_ =
+                                                                                // vk::DescriptorType::eSampler,
+                                     &imageInfo, // const vk::DescriptorImageInfo* pImageInfo_ = {},
+                                     nullptr,    // const vk::DescriptorBufferInfo* pBufferInfo_ = {},
+                                     nullptr     // const vk::BufferView* pTexelBufferView_ = {}
+              );
+            app->m_VulkanRenderer->GetDevice().updateDescriptorSets(descriptorWrite, nullptr);
             firstFrame = false;
           }
         }
@@ -143,6 +184,11 @@ public:
 
         commandBuffer.beginRenderPass(renderPassBeginInfo, vk::SubpassContents::eInline);
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, app->m_VulkanRenderer->GetPipeline());
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                         app->m_VulkanRenderer->GetPipelineLayout(),
+                                         0,
+                                         app->m_VulkanRenderer->GetDescriptorSet(),
+                                         nullptr);
 
         auto viewport =
           vk::Viewport(0.0f,                                                              // float x_ = {},
@@ -200,6 +246,7 @@ public:
     }
 
     app->m_VulkanRenderer->GetDevice().waitIdle();
+    app->m_VulkanRenderer->GetDevice().destroySampler(sampler);
     app->m_VulkanRenderer->FreeBuffer(vertexBuffer);
     for (auto& commandPool : commandPools) {
       app->m_VulkanRenderer->GetDevice().destroyCommandPool(commandPool);
