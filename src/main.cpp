@@ -79,9 +79,9 @@ public:
         auto [acquireResult, frameResources] = app->m_VulkanRenderer->AcquireNextFrameResources();
 
         switch (acquireResult) {
-        case vk::Result::eSuccess: {
+        case vk::Result::eSuccess:
+        case vk::Result::eSuboptimalKHR: {
         } break;
-        case vk::Result::eSuboptimalKHR:
         case vk::Result::eErrorOutOfDateKHR: {
 #ifdef _DEBUG
           std::cout << "Swapchain image suboptimal or out of date during acquiring, recreating swapchain" << std::endl;

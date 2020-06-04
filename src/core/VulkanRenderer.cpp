@@ -874,7 +874,7 @@ std::tuple<vk::Result, FrameResource> VulkanRenderer::AcquireNextFrameResources(
                                                     m_FrameResources[currentResourceIdx].m_PresentToDrawSemaphore,
                                                     nullptr);
 
-  if (acquireResult.result != vk::Result::eSuccess) {
+  if (acquireResult.result != vk::Result::eSuccess && acquireResult.result != vk::Result::eSuboptimalKHR) {
     return { acquireResult.result, FrameResource() };
   }
 
