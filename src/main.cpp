@@ -26,10 +26,10 @@ public:
     SampleApp* app = reinterpret_cast<SampleApp*>(param);
 
     std::vector<Core::VertexData> vertices = {
-      Core::VertexData{ { -0.7f, 0.7f, 0.0f, 1.0f }, { 0.0f, 1.0f } }, // bottom left
-      Core::VertexData{ { 0.7f, 0.7f, 0.0f, 1.0f }, { 1.0f, 1.0f } }, // bottom right
+      Core::VertexData{ { -0.7f, 0.7f, 0.0f, 1.0f }, { 0.0f, 1.0f } },  // bottom left
+      Core::VertexData{ { 0.7f, 0.7f, 0.0f, 1.0f }, { 1.0f, 1.0f } },   // bottom right
       Core::VertexData{ { -0.7f, -0.7f, 0.0f, 1.0f }, { 0.0f, 0.0f } }, // top left
-      Core::VertexData{ { 0.7f, -0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f } } // top right
+      Core::VertexData{ { 0.7f, -0.7f, 0.0f, 1.0f }, { 1.0f, 0.0f } }   // top right
     };
 
     vk::DeviceSize verticesSize = static_cast<uint32_t>(vertices.size()) * sizeof(Core::VertexData);
