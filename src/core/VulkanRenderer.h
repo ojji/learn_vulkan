@@ -37,6 +37,13 @@ struct ImageData
   vk::ImageView m_View;
 };
 
+struct BufferData
+{
+  vk::DeviceSize m_Size;
+  vk::DeviceMemory m_Memory;
+  vk::Buffer m_Handle;
+};
+
 struct FrameResource
 {
   uint32_t m_FrameIdx;
@@ -48,6 +55,7 @@ struct FrameResource
   vk::QueryPool m_QueryPool;
   SwapchainImage m_SwapchainImage;
   FrameStat m_FrameStat;
+  BufferData m_UniformBuffer;
 };
 
 struct Swapchain
@@ -63,13 +71,6 @@ struct VertexData
 {
   float m_Position[4];
   float m_TexCoord[2];
-};
-
-struct BufferData
-{
-  vk::DeviceSize m_Size;
-  vk::DeviceMemory m_Memory;
-  vk::Buffer m_Handle;
 };
 
 struct VulkanParameters
@@ -156,6 +157,8 @@ public:
   // @ojji: TODO this does not belong here
   vk::PipelineLayout GetPipelineLayout() { return m_VulkanParameters.m_PipelineLayout; }
 
+  [[nodiscard]] vk::Extent2D GetSwapchainExtent() const;
+
 private:
   void Free();
 
@@ -179,7 +182,6 @@ private:
   [[nodiscard]] uint32_t GetSwapchainImageCount() const;
   [[nodiscard]] vk::SurfaceFormatKHR GetSwapchainFormat(
     std::vector<vk::SurfaceFormatKHR> const& supportedSurfaceFormats) const;
-  [[nodiscard]] vk::Extent2D GetSwapchainExtent() const;
   [[nodiscard]] vk::ImageUsageFlags GetSwapchainUsageFlags() const;
   [[nodiscard]] vk::SurfaceTransformFlagBitsKHR GetSwapchainTransform() const;
   [[nodiscard]] vk::PresentModeKHR GetSwapchainPresentMode(

@@ -16,7 +16,8 @@ public:
                       vk::Image destinationImage,
                       vk::ImageLayout destinationLayout,
                       vk::AccessFlags destinationAccessFlags,
-                      vk::PipelineStageFlags destinationPipelineStageFlags);
+                      vk::PipelineStageFlags destinationPipelineStageFlags,
+                      vk::Fence canCleanupFence);
   uint32_t GetImageWidth() const { return m_Width; };
   uint32_t GetImageHeight() const { return m_Height; };
   vk::Image GetDestinationImage() const { return m_DestinationImage; };

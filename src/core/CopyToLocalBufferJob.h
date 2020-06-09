@@ -14,7 +14,8 @@ public:
                        vk::Buffer destinationBuffer,
                        vk::DeviceSize destinationOffset,
                        vk::AccessFlags destinationAccessFlags,
-                       vk::PipelineStageFlags destinationPipelineStageFlags);
+                       vk::PipelineStageFlags destinationPipelineStageFlags,
+                       vk::Fence canCleanupFence);
 
   virtual ~CopyToLocalBufferJob();
 

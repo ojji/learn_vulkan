@@ -24,12 +24,13 @@ VulkanParameters::VulkanParameters() :
   m_GraphicsQueueFamilyIdx(std::numeric_limits<QueueFamilyIdx>::max()),
   m_TransferQueueFamilyIdx(std::numeric_limits<QueueFamilyIdx>::max()),
   m_PresentSurface(nullptr),
-  m_SurfaceCapabilities(),
+  m_SurfaceCapabilities(vk::SurfaceCapabilitiesKHR()),
   m_Swapchain(Swapchain()),
   m_VsyncEnabled(false),
   m_RenderPass(nullptr),
   m_Pipeline(nullptr),
   m_PipelineLayout(nullptr),
+  m_TimestampPeriod(0),
   m_DescriptorSetLayout(nullptr),
   m_DescriptorPool(nullptr),
   m_DescriptorSet(nullptr)
@@ -42,7 +43,10 @@ VulkanRenderer::VulkanRenderer(bool vsyncEnabled, uint32_t frameResourcesCount) 
 VulkanRenderer::VulkanRenderer(std::ostream& debugOutput, bool vsyncEnabled, uint32_t frameResourcesCount) :
   m_VulkanParameters(VulkanParameters()),
   m_DebugOutput(debugOutput),
+  m_CanRender(false),
+  m_IsRunning(true),
   m_WindowParameters(Os::WindowParameters()),
+  m_CurrentResourceIdx(0),
   m_FrameResourcesCount(frameResourcesCount),
   m_FrameStat(FrameStat()),
   m_GraphicsQueueSubmitCriticalSection(std::mutex()),
@@ -787,6 +791,12 @@ vk::CommandBuffer VulkanRenderer::AllocateCommandBuffer(vk::CommandPool commandP
 
 void VulkanRenderer::FreeFrameResource(FrameResource& frameResource)
 {
+  if (frameResource.m_UniformBuffer.m_Memory) {
+    m_VulkanParameters.m_Device.freeMemory(frameResource.m_UniformBuffer.m_Memory);
+  }
+  if (frameResource.m_UniformBuffer.m_Handle) {
+    m_VulkanParameters.m_Device.destroyBuffer(frameResource.m_UniformBuffer.m_Handle);
+  }
   if (frameResource.m_Fence) {
     m_VulkanParameters.m_Device.destroyFence(frameResource.m_Fence);
   }
@@ -855,6 +865,12 @@ void VulkanRenderer::InitializeFrameResources()
       );
 
     m_FrameResources[i].m_QueryPool = m_VulkanParameters.m_Device.createQueryPool(queryPoolCreateInfo);
+
+    vk::DeviceSize uniformBufferSize = 8 * 1024 * 1024;
+    m_FrameResources[i].m_UniformBuffer =
+      CreateBuffer(uniformBufferSize,
+                   { vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eUniformBuffer },
+                   { vk::MemoryPropertyFlagBits::eDeviceLocal });
   }
 }
 
@@ -1007,13 +1023,24 @@ void VulkanRenderer::EndFrame(FrameResource& frameResources, vk::CommandBuffer c
 
 bool VulkanRenderer::CreateDescriptorSetLayout()
 {
-  auto bindings = std::vector<vk::DescriptorSetLayoutBinding>({ vk::DescriptorSetLayoutBinding(
-    0,                                         // uint32_t binding_ = {},
-    vk::DescriptorType::eCombinedImageSampler, // vk::DescriptorType descriptorType_ = vk::DescriptorType::eSampler,
-    1,                                         // uint32_t descriptorCount_ = {},
-    { vk::ShaderStageFlagBits::eFragment },    // vk::ShaderStageFlags stageFlags_ = {},
-    nullptr                                    // const vk::Sampler* pImmutableSamplers_ = {}
-    ) });
+  auto bindings = std::vector<vk::DescriptorSetLayoutBinding>(
+    { // Combined sampler and image
+      vk::DescriptorSetLayoutBinding(
+        0,                                         // uint32_t binding_ = {},
+        vk::DescriptorType::eCombinedImageSampler, // vk::DescriptorType descriptorType_ = vk::DescriptorType::eSampler,
+        1,                                         // uint32_t descriptorCount_ = {},
+        { vk::ShaderStageFlagBits::eFragment },    // vk::ShaderStageFlags stageFlags_ = {},
+        nullptr                                    // const vk::Sampler* pImmutableSamplers_ = {}
+        ),
+
+      // Uniform buffer
+      vk::DescriptorSetLayoutBinding(
+        1,                                    // uint32_t binding_ = {},
+        vk::DescriptorType::eUniformBuffer,   // vk::DescriptorType descriptorType_ = vk::DescriptorType::eSampler,
+        1,                                    // uint32_t descriptorCount_ = {},
+        { vk::ShaderStageFlagBits::eVertex }, // vk::ShaderStageFlags stageFlags_ = {},
+        nullptr                               // const vk::Sampler* pImmutableSamplers_ = {}
+        ) });
 
   auto descriptorSetLayoutCreateInfo =
     vk::DescriptorSetLayoutCreateInfo({}, // vk::DescriptorSetLayoutCreateFlags flags_ = {},
@@ -1028,10 +1055,18 @@ bool VulkanRenderer::CreateDescriptorSetLayout()
 
 bool VulkanRenderer::CreateDescriptorPool()
 {
-  auto poolSizes = std::vector<vk::DescriptorPoolSize>({ vk::DescriptorPoolSize(
-    vk::DescriptorType::eCombinedImageSampler, // vk::DescriptorType type_ = vk::DescriptorType::eSampler,
-    1                                          // uint32_t descriptorCount_ = {}
-    ) });
+  auto poolSizes = std::vector<vk::DescriptorPoolSize>(
+    { // Combined sampler and image
+      vk::DescriptorPoolSize(
+        vk::DescriptorType::eCombinedImageSampler, // vk::DescriptorType type_ = vk::DescriptorType::eSampler,
+        1                                          // uint32_t descriptorCount_ = {}
+        ),
+
+      // Uniform buffer
+      vk::DescriptorPoolSize(
+        vk::DescriptorType::eUniformBuffer, // vk::DescriptorType type_ = vk::DescriptorType::eSampler,
+        1                                   // uint32_t descriptorCount_ = {}
+        ) });
 
   auto descriptorPoolCreateInfo =
     vk::DescriptorPoolCreateInfo({},                                      // vk::DescriptorPoolCreateFlags flags_ = {},
@@ -1447,8 +1482,8 @@ void VulkanRenderer::CopyToLocalBuffer(std::shared_ptr<CopyToLocalBufferJob> tra
                    waitStage,              // const vk::PipelineStageFlags* pWaitDstStageMask_ = {},
                    1,                      // uint32_t commandBufferCount_ = {},
                    &graphicsCommandBuffer, // const vk::CommandBuffer* pCommandBuffers_ = {},
-                   0,                      // uint32_t signalSemaphoreCount_ = {},
-                   nullptr                 // const vk::Semaphore* pSignalSemaphores_ = {}
+                   1,                      // uint32_t signalSemaphoreCount_ = {},
+                   &transferJob->GetTransferCompletedSemaphore() // const vk::Semaphore* pSignalSemaphores_ = {}
     );
   SubmitToGraphicsQueue(graphicsSubmitInfo, transferJob->GetTransferCompletedFence());
   transferJob->SetWait();
@@ -1567,8 +1602,8 @@ void VulkanRenderer::CopyToLocalImage(std::shared_ptr<Core::CopyToLocalImageJob>
                    waitStage,              // const vk::PipelineStageFlags* pWaitDstStageMask_ = {},
                    1,                      // uint32_t commandBufferCount_ = {},
                    &graphicsCommandBuffer, // const vk::CommandBuffer* pCommandBuffers_ = {},
-                   0,                      // uint32_t signalSemaphoreCount_ = {},
-                   nullptr                 // const vk::Semaphore* pSignalSemaphores_ = {}
+                   1,                      // uint32_t signalSemaphoreCount_ = {},
+                   &transferJob->GetTransferCompletedSemaphore() // const vk::Semaphore* pSignalSemaphores_ = {}
     );
 
   SubmitToGraphicsQueue(graphicsSubmitInfo, transferJob->GetTransferCompletedFence());

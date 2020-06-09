@@ -25,9 +25,11 @@ public:
   inline vk::DeviceSize GetSize() const { return m_Size; }
   inline vk::Semaphore& GetFromTransferToGraphicsSemaphore() { return m_FromTransferToGraphicsSemaphore; }
   inline vk::Fence& GetTransferCompletedFence() { return m_TransferCompletedFence; }
+  inline vk::Semaphore& GetTransferCompletedSemaphore() { return m_TransferCompletedSemaphore; }
 
 protected:
-  CopyToLocalJob(Core::VulkanRenderer* renderer, void* data, vk::DeviceSize size, CopyFlags jobType);
+  CopyToLocalJob(
+    Core::VulkanRenderer* renderer, void* data, vk::DeviceSize size, CopyFlags jobType, vk::Fence canCleanupFence);
   virtual ~CopyToLocalJob();
 
   Core::VulkanRenderer* m_Renderer;
@@ -40,7 +42,9 @@ private:
   bool m_ReadyToWait;
   vk::Fence m_TransferCompletedFence;
   vk::Semaphore m_FromTransferToGraphicsSemaphore;
+  vk::Semaphore m_TransferCompletedSemaphore;
   CopyFlags m_JobType;
+  vk::Fence m_CanCleanupFence;
 };
 } // namespace Core
 

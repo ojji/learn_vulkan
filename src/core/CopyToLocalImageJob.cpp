@@ -9,8 +9,9 @@ CopyToLocalImageJob::CopyToLocalImageJob(VulkanRenderer* renderer,
                                          vk::Image destinationImage,
                                          vk::ImageLayout destinationLayout,
                                          vk::AccessFlags destinationAccessFlags,
-                                         vk::PipelineStageFlags destinationPipelineStageFlags) :
-  CopyToLocalJob(renderer, data, size, CopyFlags::ToLocalImage),
+                                         vk::PipelineStageFlags destinationPipelineStageFlags,
+                                         vk::Fence canCleanupFence) :
+  CopyToLocalJob(renderer, data, size, CopyFlags::ToLocalImage, canCleanupFence),
   m_Width(width),
   m_Height(height),
   m_DestinationImage(destinationImage),
