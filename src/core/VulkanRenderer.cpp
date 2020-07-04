@@ -1283,7 +1283,14 @@ bool VulkanRenderer::CreatePipeline()
     -1                                   // int32_t basePipelineIndex_ = {}
   );
 
-  m_VulkanParameters.m_Pipeline = m_VulkanParameters.m_Device.createGraphicsPipeline(nullptr, pipelineCreateInfo);
+  auto result = m_VulkanParameters.m_Device.createGraphicsPipeline(nullptr, pipelineCreateInfo);
+  if (result.result != vk::Result::eSuccess)
+  {
+    throw std::runtime_error("Could not create graphics pipeline " + vk::to_string(result.result));
+  }
+
+  m_VulkanParameters.m_Pipeline = result.value;
+
   return true;
 }
 
