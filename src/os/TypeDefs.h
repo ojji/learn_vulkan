@@ -1,5 +1,4 @@
-#ifndef OS_TYPEDEFS_H
-#define OS_TYPEDEFS_H
+#pragma once
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 #include <Windows.h>
@@ -10,5 +9,3 @@ namespace Os {
 typedef HMODULE LibraryHandle;
 #endif
 }
-
-#endif // OS_TYPEDEFS_H

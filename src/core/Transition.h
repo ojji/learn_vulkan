@@ -1,5 +1,4 @@
-#ifndef CORE_TRANSITION_H
-#define CORE_TRANSITION_H
+#pragma once
 
 #include <array>
 #include <cmath>
@@ -33,6 +32,3 @@ private:
   float m_PeriodInSeconds;
 };
 } // namespace Core
-
-
-#endif // CORE_TRANSITION_H

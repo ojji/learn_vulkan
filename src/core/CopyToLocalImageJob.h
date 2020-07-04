@@ -1,5 +1,4 @@
-#ifndef CORE_COPYTOLOCALIMAGEJOB_H
-#define CORE_COPYTOLOCALIMAGEJOB_H
+#pragma once
 
 #include "CopyToLocalJob.h"
 
@@ -34,4 +33,3 @@ private:
   vk::PipelineStageFlags m_DestinationPipelineStageFlags;
 };
 } // namespace Core
-#endif // CORE_COPYTOLOCALIMAGEJOB_H

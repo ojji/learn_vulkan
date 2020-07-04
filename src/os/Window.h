@@ -1,5 +1,4 @@
-#ifndef OS_WINDOW_H
-#define OS_WINDOW_H
+#pragma once
 
 #include <functional>
 
@@ -38,5 +37,3 @@ private:
   std::function<OnWindowCloseCallback> m_OnWindowClose;
 };
 }
-
-#endif // OS_WINDOW_H

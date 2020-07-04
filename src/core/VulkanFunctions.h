@@ -1,5 +1,4 @@
-#ifndef CORE_VULKANFUNCTIONS_H
-#define CORE_VULKANFUNCTIONS_H
+#pragma once
 
 #ifndef VK_EXPAND_VERSION
 #define VK_EXPAND_VERSION(version)                                                                                     \
@@ -13,5 +12,3 @@
 #ifndef VK_EXPAND_EXTENT3D
 #define VK_EXPAND_EXTENT3D(extent3D) "(" << extent3D.width << "," << extent3D.height << "," << extent3D.depth << ")"
 #endif
-
-#endif // CORE_VULKANFUNCTIONS_H

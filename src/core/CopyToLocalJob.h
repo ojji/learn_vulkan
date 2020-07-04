@@ -1,5 +1,4 @@
-#ifndef CORE_COPYTOLOCALJOB_H
-#define CORE_COPYTOLOCALJOB_H
+#pragma once
 
 #include <condition_variable>
 #include <mutex>
@@ -47,5 +46,3 @@ private:
   vk::Fence m_CanCleanupFence;
 };
 } // namespace Core
-
-#endif // CORE_COPYTOLOCALJOB_H

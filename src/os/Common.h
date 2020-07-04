@@ -1,5 +1,4 @@
-#ifndef OS_COMMON_H
-#define OS_COMMON_H
+#pragma once
 
 #include <filesystem>
 #include <vector>
@@ -9,6 +8,3 @@ std::filesystem::path GetExecutableDirectory();
 std::vector<char> ReadContentFromBinaryFile(char const* filename);
 std::vector<char> LoadTextureData(char const* filename, uint32_t& width, uint32_t& height);
 } // namespace Os
-
-
-#endif // OS_COMMON_H

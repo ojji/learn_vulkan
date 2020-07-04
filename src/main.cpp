@@ -1,5 +1,6 @@
 #include "core/CopyToLocalBufferJob.h"
 #include "core/CopyToLocalImageJob.h"
+#include "core/Mat4.h"
 #include "core/Transition.h"
 #include "core/VulkanFunctions.h"
 #include "core/VulkanRenderer.h"
@@ -18,52 +19,16 @@
 #include <thread>
 #include <vector>
 
-class Mat4
-{
-public:
-  static Mat4 GetOrthographic(
-    float leftPlane, float rightPlane, float topPlane, float bottomPlane, float nearPlane, float farPlane)
-  {
-    Mat4 result;
-    result.m_Data = std::array<float, 16>{ 2.0f / (rightPlane - leftPlane),
-                                           0.0f,
-                                           0.0f,
-                                           0.0f,
-
-                                           0.0f,
-                                           2.0f / (bottomPlane - topPlane),
-                                           0.0f,
-                                           0.0f,
-
-                                           0.0f,
-                                           0.0f,
-                                           1.0f / (nearPlane - farPlane),
-                                           0.0f,
-
-                                           -(rightPlane + leftPlane) / (rightPlane - leftPlane),
-                                           -(bottomPlane + topPlane) / (bottomPlane - topPlane),
-                                           nearPlane / (nearPlane - farPlane),
-                                           1.0f };
-
-    return result;
-  }
-
-  static constexpr vk::DeviceSize GetSize() { return 16 * sizeof(float); }
-  float* GetData() { return m_Data.data(); }
-
-private:
-  std::array<float, 16> m_Data;
-};
 
 class SampleApp
 {
 public:
-  Mat4 GetUniformData()
+  Core::Mat4 GetUniformData()
   {
     vk::Extent2D currentExtent = m_VulkanRenderer->GetSwapchainExtent();
     float halfWidth = static_cast<float>(currentExtent.width) / 2.0f;
     float halfHeight = static_cast<float>(currentExtent.height) / 2.0f;
-    return Mat4::GetOrthographic(-halfWidth, halfWidth, -halfHeight, halfHeight, -1.0f, 1.0f);
+    return Core::Mat4::GetOrthographic(-halfWidth, halfWidth, -halfHeight, halfHeight, -1.0f, 1.0f);
   }
 
   static DWORD WINAPI RenderThreadStart(LPVOID param)
@@ -110,7 +75,7 @@ public:
 
   void OnWindowClose(Os::Window* window)
   {
-    &UNREFERENCED_PARAMETER(window);
+    UNREFERENCED_PARAMETER(window);
     m_IsRunning = false;
   }
 
@@ -363,11 +328,11 @@ public:
     m_VulkanRenderer->GetDevice().resetCommandPool(currentCommandPool, {});
 
     // @ojji TODO where does this belong?
-    Mat4 uniformData = GetUniformData();
+    Core::Mat4 uniformData = GetUniformData();
     auto uniformTransfer = std::shared_ptr<Core::CopyToLocalBufferJob>(
       new Core::CopyToLocalBufferJob(m_VulkanRenderer.get(),
                                      reinterpret_cast<void*>(uniformData.GetData()),
-                                     Mat4::GetSize(),
+                                     Core::Mat4::GetSize(),
                                      frameResources.m_UniformBuffer.m_Handle,
                                      vk::DeviceSize(0),
                                      { vk::AccessFlagBits::eShaderRead },
@@ -380,7 +345,7 @@ public:
     auto uniformBufferInfo =
       vk::DescriptorBufferInfo(frameResources.m_UniformBuffer.m_Handle, // vk::Buffer buffer_ = {},
                                vk::DeviceSize(0),                       // vk::DeviceSize offset_ = {},
-                               Mat4::GetSize()                          // vk::DeviceSize range_ = {}
+                               Core::Mat4::GetSize()                          // vk::DeviceSize range_ = {}
       );
 
     auto uniformBufferDescriptorWrite = vk::WriteDescriptorSet(

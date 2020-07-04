@@ -1,5 +1,4 @@
-#ifndef CORE_VULKANRENDERER_H
-#define CORE_VULKANRENDERER_H
+#pragma once
 
 #include <memory>
 #include <mutex>
@@ -230,5 +229,3 @@ private:
   std::mutex m_TransferQueueSubmitCriticalSection;
 };
 } // namespace Core
-
-#endif // CORE_VULKANRENDERER_H

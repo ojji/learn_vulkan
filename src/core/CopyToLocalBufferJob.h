@@ -1,5 +1,4 @@
-#ifndef CORE_COPYTOLOCALBUFFERJOB_H
-#define CORE_COPYTOLOCALBUFFERJOB_H
+#pragma once
 
 #include "CopyToLocalJob.h"
 
@@ -32,4 +31,3 @@ private:
 };
 
 } // namespace Core
-#endif // CORE_COPYTOLOCALBUFFERJOB_H
