@@ -21,6 +21,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan)
 
 add_subdirectory(src/core)
 add_subdirectory(src/os)
+add_subdirectory(src/utils)
 
 # creating shaders
 set (ShaderOutputDirectory ${PROJECT_BINARY_DIR}/$<CONFIG>/shaders)

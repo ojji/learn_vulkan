@@ -6,6 +6,9 @@
 #include "core/VulkanRenderer.h"
 #include "os/Common.h"
 #include "os/Window.h"
+#include "utils/ConsoleLogger.h"
+#include "utils/FileLogger.h"
+#include "utils/Logger.h"
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -18,7 +21,6 @@
 #include <tchar.h>
 #include <thread>
 #include <vector>
-
 
 class SampleApp
 {
@@ -55,6 +57,14 @@ public:
 
   bool Initialize()
   {
+    std::filesystem::path debugLog = Os::GetExecutableDirectory() / "logs/everything.log";
+    std::filesystem::path keyboardLog = Os::GetExecutableDirectory() / "logs/keyboard.log";
+
+    Utils::Logger::Get().Register<Utils::ConsoleLogger>();
+    Utils::Logger::Get().Register<Utils::FileLogger>(debugLog, Utils::FileLogger::OpenMode::Truncate);
+    Utils::Logger::Get().Register<Utils::FileLogger>(
+      keyboardLog, Utils::FileLogger::OpenMode::Truncate, std::initializer_list<std::string>{ std::string(u8"Keyboard") });
+
     if (!m_Window->Create(_T("Hello Vulkan!"))) {
       return false;
     }
@@ -345,7 +355,7 @@ public:
     auto uniformBufferInfo =
       vk::DescriptorBufferInfo(frameResources.m_UniformBuffer.m_Handle, // vk::Buffer buffer_ = {},
                                vk::DeviceSize(0),                       // vk::DeviceSize offset_ = {},
-                               Core::Mat4::GetSize()                          // vk::DeviceSize range_ = {}
+                               Core::Mat4::GetSize()                    // vk::DeviceSize range_ = {}
       );
 
     auto uniformBufferDescriptorWrite = vk::WriteDescriptorSet(

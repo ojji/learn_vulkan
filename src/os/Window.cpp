@@ -1,6 +1,9 @@
 #include "Window.h"
+#include "utils/Logger.h"
+#include <Windows.h>
 #include <chrono>
 #include <iostream>
+#include <sstream>
 #include <thread>
 
 namespace Os {
@@ -28,6 +31,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 LRESULT Window::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
   switch (uMsg) {
+
+  // Keyboard events
+  case WM_KEYDOWN:
+  case WM_KEYUP:
+  case WM_SYSKEYDOWN:
+  case WM_SYSKEYUP: {
+    int repeatCount = lParam & 0xFFFF;
+    int key = static_cast<int>(wParam);
+    bool isExtended = (HIWORD(lParam) & KF_EXTENDED) != 0;
+    bool isAltDown = ((HIWORD(lParam) & KF_ALTDOWN) != 0);
+    bool isRepeated = ((HIWORD(lParam) & KF_REPEAT) != 0);
+    bool isKeyUp = ((HIWORD(lParam) & KF_UP) != 0);
+
+    std::ostringstream logMessage;
+
+    logMessage << "key: " << std::showbase << std::hex << key << ", repeatCount: " << std::dec << repeatCount
+               << ", extended: " << std::boolalpha << isExtended << ", alt down: " << std::boolalpha << isAltDown
+               << ", repeated: " << std::boolalpha << isRepeated << ", keyUp: " << std::boolalpha << isKeyUp
+               << std::endl;
+    Utils::Logger::Get().LogDebug(logMessage.str(), u8"Keyboard", u8"");
+
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+  }
+
   case WM_DESTROY: {
     PostQuitMessage(0);
     return 0;
