@@ -3,13 +3,13 @@
 #include <algorithm>
 #include <cassert>
 #include <filesystem>
-#include <fstream>
-#include <iostream>
+#include <sstream>
 #include <vector>
 
 #include "VulkanFunctions.h"
 #include "os/Common.h"
 #include "os/Window.h"
+#include "utils/Logger.h"
 
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
@@ -37,12 +37,7 @@ VulkanParameters::VulkanParameters() :
 {}
 
 VulkanRenderer::VulkanRenderer(bool vsyncEnabled, uint32_t frameResourcesCount) :
-  VulkanRenderer(std::cout, vsyncEnabled, frameResourcesCount)
-{}
-
-VulkanRenderer::VulkanRenderer(std::ostream& debugOutput, bool vsyncEnabled, uint32_t frameResourcesCount) :
   m_VulkanParameters(VulkanParameters()),
-  m_DebugOutput(debugOutput),
   m_CanRender(false),
   m_IsRunning(true),
   m_WindowParameters(Os::WindowParameters()),
@@ -52,7 +47,6 @@ VulkanRenderer::VulkanRenderer(std::ostream& debugOutput, bool vsyncEnabled, uin
   m_GraphicsQueueSubmitCriticalSection(std::mutex()),
   m_TransferQueueSubmitCriticalSection(std::mutex())
 {
-  m_DebugOutput << std::showbase;
   m_VulkanParameters.m_VsyncEnabled = vsyncEnabled;
 }
 
@@ -131,35 +125,31 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
 
   uint32_t implementationVersion = GetVulkanImplementationVersion();
 
-#ifdef _DEBUG
-  m_DebugOutput << "Vulkan implementation version: " << VK_VERSION_MAJOR(implementationVersion) << "."
-                << VK_VERSION_MINOR(implementationVersion) << "." << VK_VERSION_PATCH(implementationVersion)
-                << std::endl;
-#endif
+  std::ostringstream debugOutput;
+  debugOutput << std::showbase << "Vulkan implementation version: " << VK_VERSION_MAJOR(implementationVersion) << "."
+              << VK_VERSION_MINOR(implementationVersion) << "." << VK_VERSION_PATCH(implementationVersion) << std::endl;
 
   std::vector<vk::LayerProperties> layers = GetVulkanLayers();
 
-#ifdef _DEBUG
-  m_DebugOutput << "\nAvailable layers:" << std::endl;
+  debugOutput << "\nAvailable layers:" << std::endl;
   for (decltype(layers)::size_type idx = 0; idx != layers.size(); ++idx) {
     if (idx != 0) {
-      m_DebugOutput << std::endl;
+      debugOutput << std::endl;
     }
-    m_DebugOutput << "\t#" << idx << " layerName: " << layers[idx].layerName << std::endl
-                  << "\t#" << idx << " specVersion: " << VK_EXPAND_VERSION(layers[idx].specVersion) << std::endl
-                  << "\t#" << idx << " implementationVersion: " << layers[idx].implementationVersion << std::endl
-                  << "\t#" << idx << " description: " << layers[idx].description << std::endl;
+    debugOutput << "\t#" << idx << " layerName: " << layers[idx].layerName << std::endl
+                << "\t#" << idx << " specVersion: " << VK_EXPAND_VERSION(layers[idx].specVersion) << std::endl
+                << "\t#" << idx << " implementationVersion: " << layers[idx].implementationVersion << std::endl
+                << "\t#" << idx << " description: " << layers[idx].description << std::endl;
   }
-#endif
-  std::vector<vk::ExtensionProperties> instanceExtensions = GetVulkanInstanceExtensions();
 
-#ifdef _DEBUG
-  m_DebugOutput << "\nAvailable instance extensions:" << std::endl;
+  std::vector<vk::ExtensionProperties> instanceExtensions = GetVulkanInstanceExtensions();
+  debugOutput << "\nAvailable instance extensions:" << std::endl;
   for (decltype(instanceExtensions)::size_type idx = 0; idx != instanceExtensions.size(); ++idx) {
-    m_DebugOutput << "\t#" << idx << " extensionName: " << instanceExtensions[idx].extensionName
-                  << " (specVersion: " << instanceExtensions[idx].specVersion << ")" << std::endl;
+    debugOutput << "\t#" << idx << " extensionName: " << instanceExtensions[idx].extensionName
+                << " (specVersion: " << instanceExtensions[idx].specVersion << ")" << std::endl;
   }
-#endif
+  Utils::Logger::Get().LogDebugEx(u8"Vulkan properties", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+  debugOutput.clear();
 
   std::vector<char const*> const requiredExtensions = { VK_KHR_SURFACE_EXTENSION_NAME,
                                                         VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
@@ -176,13 +166,14 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
     const char* layerName = layers[layerIdx].layerName;
     std::vector<vk::ExtensionProperties> layerExtensions = GetVulkanLayerExtensions(layerName);
 
-#ifdef _DEBUG
-    m_DebugOutput << "\nAvailable " << layerName << " extensions:" << std::endl;
+    debugOutput << "\nAvailable " << layerName << " extensions:" << std::endl;
     for (decltype(layerExtensions)::size_type idx = 0; idx != layerExtensions.size(); ++idx) {
-      m_DebugOutput << "\t#" << idx << " extensionName: " << layerExtensions[idx].extensionName
-                    << " (specVersion: " << layerExtensions[idx].specVersion << ")" << std::endl;
+      debugOutput << "\t#" << idx << " extensionName: " << layerExtensions[idx].extensionName
+                  << " (specVersion: " << layerExtensions[idx].specVersion << ")" << std::endl;
     }
-#endif
+    Utils::Logger::Get().LogDebugEx(
+      u8"Vulkan properties", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+    debugOutput.clear();
   }
 
   if (!CreateInstance(requiredExtensions)) {
@@ -190,7 +181,8 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
   }
 
   if (!CreatePresentationSurface()) {
-    std::cerr << "Could not create the presentation surface" << std::endl;
+    Utils::Logger::Get().LogCriticalEx(
+      u8"Could not create the presentation surface", u8"Renderer", __FILE__, __func__, __LINE__);
     return false;
   }
 
@@ -338,20 +330,24 @@ vk::SurfaceCapabilitiesKHR VulkanRenderer::GetDeviceSurfaceCapabilities(vk::Phys
   vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
 
   // Get surface capabilities
-#ifdef _DEBUG
-  m_DebugOutput << "\nSurface capabilities:" << std::endl
-                << "\tminImageCount: " << surfaceCapabilities.minImageCount << std::endl
-                << "\tmaxImageCount: " << surfaceCapabilities.maxImageCount << std::endl
-                << "\tcurrentExtent: " << VK_EXPAND_EXTENT2D(surfaceCapabilities.currentExtent) << std::endl
-                << "\tminImageExtent: " << VK_EXPAND_EXTENT2D(surfaceCapabilities.minImageExtent) << std::endl
-                << "\tmaxImageExtent: " << VK_EXPAND_EXTENT2D(surfaceCapabilities.maxImageExtent) << std::endl
-                << "\tmaxImageArrayLayers: " << surfaceCapabilities.maxImageArrayLayers << std::endl
-                << "\tsupportedTransforms: " << vk::to_string(surfaceCapabilities.supportedTransforms) << std::endl
-                << "\tcurrentTransform: " << vk::to_string(surfaceCapabilities.currentTransform) << std::endl
-                << "\tsupportedCompositeAlpha: " << vk::to_string(surfaceCapabilities.supportedCompositeAlpha)
-                << std::endl
-                << "\tsupportedUsageFlags: " << vk::to_string(surfaceCapabilities.supportedUsageFlags) << std::endl;
-#endif
+  std::ostringstream debugOutput;
+  debugOutput << "\nSurface capabilities:" << std::endl
+              << "\tminImageCount: " << surfaceCapabilities.minImageCount << std::endl
+              << "\tmaxImageCount: " << surfaceCapabilities.maxImageCount << std::endl
+              << "\tcurrentExtent: " << VK_EXPAND_EXTENT2D(surfaceCapabilities.currentExtent) << std::endl
+              << "\tminImageExtent: " << VK_EXPAND_EXTENT2D(surfaceCapabilities.minImageExtent) << std::endl
+              << "\tmaxImageExtent: " << VK_EXPAND_EXTENT2D(surfaceCapabilities.maxImageExtent) << std::endl
+              << "\tmaxImageArrayLayers: " << surfaceCapabilities.maxImageArrayLayers << std::endl
+              << "\tsupportedTransforms: "
+              << vk::to_string(surfaceCapabilities.supportedTransforms) << std::endl
+              << "\tcurrentTransform: " << vk::to_string(surfaceCapabilities.currentTransform)
+              << std::endl
+              << "\tsupportedCompositeAlpha: "
+              << vk::to_string(surfaceCapabilities.supportedCompositeAlpha) << std::endl
+              << "\tsupportedUsageFlags: "
+              << vk::to_string(surfaceCapabilities.supportedUsageFlags) << std::endl;
+  Utils::Logger::Get().LogDebugEx(
+    u8"Device surface capabilities", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
 
   return surfaceCapabilities;
 }
@@ -364,6 +360,7 @@ bool VulkanRenderer::CreateDevice()
 
   bool presentQueueFound = false;
   bool transferQueueFound = false;
+  std::ostringstream debugOutput;
 
   for (decltype(physicalDevices)::size_type deviceIdx = 0; deviceIdx != physicalDevices.size(); ++deviceIdx) {
     auto overallProperties = physicalDevices[deviceIdx]
@@ -372,91 +369,88 @@ bool VulkanRenderer::CreateDevice()
                                                vk::PhysicalDeviceVulkan11Properties>();
 
     vk::PhysicalDeviceProperties2 deviceProperties = overallProperties.get<vk::PhysicalDeviceProperties2>();
-#ifdef _DEBUG
-    m_DebugOutput << "Device #" << deviceIdx << ": " << std::endl
-                  << "\tName: " << deviceProperties.properties.deviceName
-                  << " (type: " << vk::to_string(deviceProperties.properties.deviceType) << ")" << std::endl
-                  << "\tApi version: " << VK_EXPAND_VERSION(deviceProperties.properties.apiVersion) << std::endl
-                  << "\tDriver version: " << VK_EXPAND_VERSION(deviceProperties.properties.driverVersion) << std::endl
-                  << "\tSome limits: " << std::endl
-                  << "\t\tmaxImageDimension2D: " << deviceProperties.properties.limits.maxImageDimension2D << std::endl
-                  << "\t\tframebufferColorSampleCounts: "
-                  << vk::to_string(deviceProperties.properties.limits.framebufferColorSampleCounts) << std::endl
-                  << "\t\tframebufferDepthSampleCounts: "
-                  << vk::to_string(deviceProperties.properties.limits.framebufferDepthSampleCounts) << std::endl
-                  << "\t\ttimestampPeriod: " << deviceProperties.properties.limits.timestampPeriod << std::endl;
-#endif
+
+    debugOutput << "Device #" << deviceIdx << ": " << std::endl
+                << "\tName: " << deviceProperties.properties.deviceName
+                << " (type: " << vk::to_string(deviceProperties.properties.deviceType) << ")" << std::endl
+                << "\tApi version: " << VK_EXPAND_VERSION(deviceProperties.properties.apiVersion) << std::endl
+                << "\tDriver version: " << VK_EXPAND_VERSION(deviceProperties.properties.driverVersion) << std::endl
+                << "\tSome limits: " << std::endl
+                << "\t\tmaxImageDimension2D: " << deviceProperties.properties.limits.maxImageDimension2D << std::endl
+                << "\t\tframebufferColorSampleCounts: "
+                << vk::to_string(deviceProperties.properties.limits.framebufferColorSampleCounts) << std::endl
+                << "\t\tframebufferDepthSampleCounts: "
+                << vk::to_string(deviceProperties.properties.limits.framebufferDepthSampleCounts) << std::endl
+                << "\t\ttimestampPeriod: " << deviceProperties.properties.limits.timestampPeriod << std::endl;
 
     vk::PhysicalDeviceFeatures2 deviceFeatures = physicalDevices[deviceIdx].getFeatures2();
-#ifdef _DEBUG
-    m_DebugOutput << "\nA few device features: " << std::endl
-                  << "\tgeometryShader: " << deviceFeatures.features.geometryShader << std::endl
-                  << "\ttessellationShader: " << deviceFeatures.features.tessellationShader << std::endl
-                  << "\tsamplerAnisotropy: " << deviceFeatures.features.samplerAnisotropy << std::endl
-                  << "\tfragmentStoresAndAtomics: " << deviceFeatures.features.fragmentStoresAndAtomics << std::endl
-                  << "\talphaToOne: " << deviceFeatures.features.alphaToOne << std::endl;
 
-#endif
+    debugOutput << "\nA few device features: " << std::endl
+                << "\tgeometryShader: " << deviceFeatures.features.geometryShader << std::endl
+                << "\ttessellationShader: " << deviceFeatures.features.tessellationShader << std::endl
+                << "\tsamplerAnisotropy: " << deviceFeatures.features.samplerAnisotropy << std::endl
+                << "\tfragmentStoresAndAtomics: " << deviceFeatures.features.fragmentStoresAndAtomics << std::endl
+                << "\talphaToOne: " << deviceFeatures.features.alphaToOne << std::endl;
 
     std::vector<vk::ExtensionProperties> deviceExtensions = GetVulkanDeviceExtensions(physicalDevices[deviceIdx]);
-#ifdef _DEBUG
-    m_DebugOutput << "\nDevice extensions: " << std::endl;
+    debugOutput << "\nDevice extensions: " << std::endl;
     for (decltype(deviceExtensions)::size_type deviceExtensionIdx = 0; deviceExtensionIdx != deviceExtensions.size();
          ++deviceExtensionIdx) {
-      m_DebugOutput << "\t#" << deviceExtensionIdx
-                    << " extensionName: " << deviceExtensions[deviceExtensionIdx].extensionName
-                    << " (specVersion: " << deviceExtensions[deviceExtensionIdx].specVersion << ")" << std::endl;
+      debugOutput << "\t#" << deviceExtensionIdx
+                  << " extensionName: " << deviceExtensions[deviceExtensionIdx].extensionName
+                  << " (specVersion: " << deviceExtensions[deviceExtensionIdx].specVersion << ")" << std::endl;
     }
-#endif
 
     // Get memory properties
     vk::PhysicalDeviceMemoryProperties memoryProperties = physicalDevices[deviceIdx].getMemoryProperties();
     float bytesInMegaBytes = 1.0f * 1024.0f * 1024.0f;
-#ifdef _DEBUG
-    m_DebugOutput << "\nMemory properties: " << std::endl;
+
+    debugOutput << "\nMemory properties: " << std::endl;
     for (uint32_t memoryTypeIdx = 0; memoryTypeIdx != memoryProperties.memoryTypeCount; ++memoryTypeIdx) {
-      m_DebugOutput << "Memory type " << memoryTypeIdx << std::endl
-                    << "\tHeapindex " << memoryProperties.memoryTypes[memoryTypeIdx].heapIndex << std::endl
-                    << "\tFlags " << vk::to_string(memoryProperties.memoryTypes[memoryTypeIdx].propertyFlags)
-                    << std::endl;
+      debugOutput << "Memory type " << memoryTypeIdx << std::endl
+                  << "\tHeapindex " << memoryProperties.memoryTypes[memoryTypeIdx].heapIndex << std::endl
+                  << "\tFlags " << vk::to_string(memoryProperties.memoryTypes[memoryTypeIdx].propertyFlags)
+                  << std::endl;
     }
 
-    m_DebugOutput << std::endl;
+    debugOutput << std::endl;
 
     for (uint32_t memoryHeapIdx = 0; memoryHeapIdx != memoryProperties.memoryHeapCount; ++memoryHeapIdx) {
       vk::DeviceSize heapSizeInBytes = memoryProperties.memoryHeaps[memoryHeapIdx].size;
       auto heapSizeInMegaBytes = heapSizeInBytes / bytesInMegaBytes;
-      m_DebugOutput << "Memory heap " << memoryHeapIdx << std::endl
-                    << "\tSize " << heapSizeInBytes << " bytes (" << heapSizeInMegaBytes << " MB)" << std::endl
-                    << "\tFlags " << vk::to_string(memoryProperties.memoryHeaps[memoryHeapIdx].flags) << std::endl;
+      debugOutput << "Memory heap " << memoryHeapIdx << std::endl
+                  << "\tSize " << heapSizeInBytes << " bytes (" << heapSizeInMegaBytes << " MB)" << std::endl
+                  << "\tFlags " << vk::to_string(memoryProperties.memoryHeaps[memoryHeapIdx].flags) << std::endl;
     }
-#endif
+    Utils::Logger::Get().LogDebugEx(
+      u8"Vulkan device creation", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+    debugOutput.clear();
 
     // Get device queue family properties
     std::vector<vk::QueueFamilyProperties2> queueFamilyProperties =
       physicalDevices[deviceIdx].getQueueFamilyProperties2();
 
-#ifdef _DEBUG
-    m_DebugOutput << "\nQueue family count: " << queueFamilyProperties.size() << std::endl;
+    debugOutput << "\nQueue family count: " << queueFamilyProperties.size() << std::endl;
     for (decltype(queueFamilyProperties)::size_type queueFamilyIdx = 0; queueFamilyIdx != queueFamilyProperties.size();
          ++queueFamilyIdx) {
       if (queueFamilyIdx != 0) {
-        m_DebugOutput << std::endl;
+        debugOutput << std::endl;
       }
-      m_DebugOutput << "\t#" << queueFamilyIdx << " queueFlags: "
-                    << vk::to_string(queueFamilyProperties[queueFamilyIdx].queueFamilyProperties.queueFlags)
-                    << std::endl
-                    << "\t#" << queueFamilyIdx
-                    << " queueCount: " << queueFamilyProperties[queueFamilyIdx].queueFamilyProperties.queueCount
-                    << std::endl
-                    << "\t#" << queueFamilyIdx << " timestampValidBits: "
-                    << queueFamilyProperties[queueFamilyIdx].queueFamilyProperties.timestampValidBits << std::endl
-                    << "\t#" << queueFamilyIdx << " minImageTransferGranularity: "
-                    << VK_EXPAND_EXTENT3D(
-                         queueFamilyProperties[queueFamilyIdx].queueFamilyProperties.minImageTransferGranularity)
-                    << std::endl;
+      debugOutput << "\t#" << queueFamilyIdx << " queueFlags: "
+                  << vk::to_string(queueFamilyProperties[queueFamilyIdx].queueFamilyProperties.queueFlags) << std::endl
+                  << "\t#" << queueFamilyIdx
+                  << " queueCount: " << queueFamilyProperties[queueFamilyIdx].queueFamilyProperties.queueCount
+                  << std::endl
+                  << "\t#" << queueFamilyIdx << " timestampValidBits: "
+                  << queueFamilyProperties[queueFamilyIdx].queueFamilyProperties.timestampValidBits << std::endl
+                  << "\t#" << queueFamilyIdx << " minImageTransferGranularity: "
+                  << VK_EXPAND_EXTENT3D(
+                       queueFamilyProperties[queueFamilyIdx].queueFamilyProperties.minImageTransferGranularity)
+                  << std::endl;
     }
-#endif
+    Utils::Logger::Get().LogDebugEx(
+      u8"Vulkan device creation", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+    debugOutput.clear();
 
     if (RequiredDeviceExtensionsAvailable(physicalDevices[deviceIdx], requiredDeviceExtensions)
         && !m_VulkanParameters.m_PhysicalDevice) {
@@ -519,6 +513,7 @@ bool VulkanRenderer::CreateDevice()
 
   m_VulkanParameters.m_Device = m_VulkanParameters.m_PhysicalDevice.createDevice(deviceCreateInfo);
   VULKAN_HPP_DEFAULT_DISPATCHER.init(m_VulkanParameters.m_Device);
+  Utils::Logger::Get().LogDebug(u8"Vulkan device created.", u8"Renderer");
 
   return true;
 }
@@ -631,27 +626,24 @@ bool VulkanRenderer::CreateSwapchain()
   std::vector<vk::SurfaceFormatKHR> supportedSurfaceFormats =
     GetSupportedSurfaceFormats(m_VulkanParameters.m_PhysicalDevice, m_VulkanParameters.m_PresentSurface);
 
-#ifdef _DEBUG
-  m_DebugOutput << "\nSupported surface format pairs: " << std::endl;
+  std::ostringstream debugOutput;
+  debugOutput << "\nSupported surface format pairs: " << std::endl;
   for (decltype(supportedSurfaceFormats)::size_type idx = 0; idx != supportedSurfaceFormats.size(); ++idx) {
     if (idx != 0) {
-      m_DebugOutput << std::endl;
+      debugOutput << std::endl;
     }
-    m_DebugOutput << "\t#" << idx << " colorSpace: " << vk::to_string(supportedSurfaceFormats[idx].colorSpace)
+    debugOutput << "\t#" << idx << " colorSpace: " << vk::to_string(supportedSurfaceFormats[idx].colorSpace)
                   << std::endl
                   << "\t#" << idx << " format: " << vk::to_string(supportedSurfaceFormats[idx].format) << std::endl;
   }
-#endif
 
   std::vector<vk::PresentModeKHR> supportedPresentationModes =
     GetSupportedPresentationModes(m_VulkanParameters.m_PhysicalDevice, m_VulkanParameters.m_PresentSurface);
 
-#ifdef _DEBUG
-  m_DebugOutput << "\nSupported presentation modes: " << std::endl;
+  debugOutput << "\nSupported presentation modes: " << std::endl;
   for (decltype(supportedPresentationModes)::size_type idx = 0; idx != supportedPresentationModes.size(); ++idx) {
-    m_DebugOutput << "\t#" << idx << ": " << vk::to_string(supportedPresentationModes[idx]) << std::endl;
+    debugOutput << "\t#" << idx << ": " << vk::to_string(supportedPresentationModes[idx]) << std::endl;
   }
-#endif
 
   uint32_t const desiredImageCount = GetSwapchainImageCount();
   vk::SurfaceFormatKHR const desiredImageFormat = GetSwapchainFormat(supportedSurfaceFormats);
@@ -660,8 +652,7 @@ bool VulkanRenderer::CreateSwapchain()
   vk::SurfaceTransformFlagBitsKHR const desiredSwapchainTransform = GetSwapchainTransform();
   vk::PresentModeKHR const desiredPresentationMode = GetSwapchainPresentMode(supportedPresentationModes);
 
-#ifdef _DEBUG
-  m_DebugOutput << "\nSwapchain creation setup:" << std::endl
+  debugOutput << "\nSwapchain creation setup:" << std::endl
                 << "\tImage count: " << desiredImageCount << std::endl
                 << "\tImage format: " << vk::to_string(desiredImageFormat.format) << std::endl
                 << "\tColor space: " << vk::to_string(desiredImageFormat.colorSpace) << std::endl
@@ -669,7 +660,8 @@ bool VulkanRenderer::CreateSwapchain()
                 << "\tUsage flags: " << vk::to_string(desiredSwapchainUsageFlags) << std::endl
                 << "\tSurface transform: " << vk::to_string(desiredSwapchainTransform) << std::endl
                 << "\tPresentation mode: " << vk::to_string(desiredPresentationMode) << std::endl;
-#endif
+  Utils::Logger::Get().LogDebugEx(u8"Swapchain creation", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+  debugOutput.clear();
 
   // NOTE: There is a race condition here. If the OS changes the window size between the calls to
   // vkGetPhysicalDeviceSurfaceCapabilitiesKHR() and to vkCreateSwapchainKHR() the currentExtent will be invalid.
@@ -880,7 +872,7 @@ std::tuple<vk::Result, FrameResource> VulkanRenderer::AcquireNextFrameResources(
   auto result = m_VulkanParameters.m_Device.waitForFences(
     m_FrameResources[currentResourceIdx].m_Fence, VK_FALSE, std::numeric_limits<uint64_t>::max());
   if (result != vk::Result::eSuccess) {
-    std::cerr << "Wait on fence timed out" << std::endl;
+    Utils::Logger::Get().LogErrorEx(u8"Wait on fence timed out", u8"Renderer", __FILE__, __func__, __LINE__);
     return { result, FrameResource() };
   }
 
@@ -1284,8 +1276,7 @@ bool VulkanRenderer::CreatePipeline()
   );
 
   auto result = m_VulkanParameters.m_Device.createGraphicsPipeline(nullptr, pipelineCreateInfo);
-  if (result.result != vk::Result::eSuccess)
-  {
+  if (result.result != vk::Result::eSuccess) {
     throw std::runtime_error("Could not create graphics pipeline " + vk::to_string(result.result));
   }
 

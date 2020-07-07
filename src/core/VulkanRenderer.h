@@ -101,7 +101,6 @@ class VulkanRenderer
 {
 public:
   VulkanRenderer(bool vsyncEnabled = false, uint32_t frameResourcesCount = 3);
-  VulkanRenderer(std::ostream& debugOutput, bool vsyncEnabled = false, uint32_t frameResourcesCount = 3);
   VulkanRenderer(VulkanRenderer const& other) = default;
   VulkanRenderer(VulkanRenderer&& other) = default;
   VulkanRenderer& operator=(VulkanRenderer const& other) = default;
@@ -216,7 +215,6 @@ private:
 protected:
   vk::DynamicLoader m_DynamicLoader;
   VulkanParameters m_VulkanParameters;
-  std::ostream& m_DebugOutput;
   volatile bool m_CanRender;
   volatile bool m_IsRunning;
 

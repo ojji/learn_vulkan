@@ -59,11 +59,14 @@ public:
   {
     std::filesystem::path debugLog = Os::GetExecutableDirectory() / "logs/everything.log";
     std::filesystem::path keyboardLog = Os::GetExecutableDirectory() / "logs/keyboard.log";
+    std::filesystem::path rendererLog = Os::GetExecutableDirectory() / "logs/renderer.log";
 
     Utils::Logger::Get().Register<Utils::ConsoleLogger>();
     Utils::Logger::Get().Register<Utils::FileLogger>(debugLog, Utils::FileLogger::OpenMode::Truncate);
     Utils::Logger::Get().Register<Utils::FileLogger>(
       keyboardLog, Utils::FileLogger::OpenMode::Truncate, std::initializer_list<std::string>{ std::string(u8"Keyboard") });
+    Utils::Logger::Get().Register<Utils::FileLogger>(
+      rendererLog, Utils::FileLogger::OpenMode::Truncate, std::initializer_list<std::string>{ std::string(u8"Renderer") });
 
     if (!m_Window->Create(_T("Hello Vulkan!"))) {
       return false;
