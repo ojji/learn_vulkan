@@ -47,9 +47,9 @@ public:
     return 0;
   }
 
-  SampleApp(std::ostream& debugStream) :
+  SampleApp() :
     m_Window(new Os::Window()),
-    m_VulkanRenderer(new Core::VulkanRenderer(debugStream, SampleApp::MAX_FRAMES_IN_FLIGHT)),
+    m_VulkanRenderer(new Core::VulkanRenderer(true, SampleApp::MAX_FRAMES_IN_FLIGHT)),
     m_Transition(Core::Transition())
   {}
 
@@ -63,10 +63,12 @@ public:
 
     Utils::Logger::Get().Register<Utils::ConsoleLogger>();
     Utils::Logger::Get().Register<Utils::FileLogger>(debugLog, Utils::FileLogger::OpenMode::Truncate);
-    Utils::Logger::Get().Register<Utils::FileLogger>(
-      keyboardLog, Utils::FileLogger::OpenMode::Truncate, std::initializer_list<std::string>{ std::string(u8"Keyboard") });
-    Utils::Logger::Get().Register<Utils::FileLogger>(
-      rendererLog, Utils::FileLogger::OpenMode::Truncate, std::initializer_list<std::string>{ std::string(u8"Renderer") });
+    Utils::Logger::Get().Register<Utils::FileLogger>(keyboardLog,
+                                                     Utils::FileLogger::OpenMode::Truncate,
+                                                     std::initializer_list<std::string>{ std::string(u8"Keyboard") });
+    Utils::Logger::Get().Register<Utils::FileLogger>(rendererLog,
+                                                     Utils::FileLogger::OpenMode::Truncate,
+                                                     std::initializer_list<std::string>{ std::string(u8"Renderer") });
 
     if (!m_Window->Create(_T("Hello Vulkan!"))) {
       return false;
@@ -506,26 +508,15 @@ private:
 
 int main()
 {
-  std::filesystem::path const debugFilePath = Os::GetExecutableDirectory() / "debug.txt";
-  std::ofstream debugFile(debugFilePath);
-
-  if (!debugFile.is_open()) {
-    std::cerr << "Cant create debug file: " << debugFilePath.c_str() << std::endl;
-    return 1;
-  }
-
-  SampleApp app(debugFile);
+  SampleApp app;
 
   if (!app.Initialize()) {
-    debugFile.close();
     return 1;
   }
 
   if (!app.StartMainLoop()) {
-    debugFile.close();
     return 1;
   }
 
-  debugFile.close();
   return 0;
 }
