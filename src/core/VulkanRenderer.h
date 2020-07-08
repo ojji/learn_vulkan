@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <mutex>
-#include <ostream>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 

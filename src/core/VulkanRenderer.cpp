@@ -149,6 +149,7 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
                 << " (specVersion: " << instanceExtensions[idx].specVersion << ")" << std::endl;
   }
   Utils::Logger::Get().LogDebugEx(u8"Vulkan properties", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+  debugOutput.str(std::string());
   debugOutput.clear();
 
   std::vector<char const*> const requiredExtensions = { VK_KHR_SURFACE_EXTENSION_NAME,
@@ -171,10 +172,10 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
       debugOutput << "\t#" << idx << " extensionName: " << layerExtensions[idx].extensionName
                   << " (specVersion: " << layerExtensions[idx].specVersion << ")" << std::endl;
     }
-    Utils::Logger::Get().LogDebugEx(
-      u8"Vulkan properties", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
-    debugOutput.clear();
   }
+  Utils::Logger::Get().LogDebugEx(u8"Vulkan properties", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+  debugOutput.str(std::string());
+  debugOutput.clear();
 
   if (!CreateInstance(requiredExtensions)) {
     return false;
@@ -331,21 +332,18 @@ vk::SurfaceCapabilitiesKHR VulkanRenderer::GetDeviceSurfaceCapabilities(vk::Phys
 
   // Get surface capabilities
   std::ostringstream debugOutput;
-  debugOutput << "\nSurface capabilities:" << std::endl
+  debugOutput << "Surface capabilities:" << std::endl
               << "\tminImageCount: " << surfaceCapabilities.minImageCount << std::endl
               << "\tmaxImageCount: " << surfaceCapabilities.maxImageCount << std::endl
               << "\tcurrentExtent: " << VK_EXPAND_EXTENT2D(surfaceCapabilities.currentExtent) << std::endl
               << "\tminImageExtent: " << VK_EXPAND_EXTENT2D(surfaceCapabilities.minImageExtent) << std::endl
               << "\tmaxImageExtent: " << VK_EXPAND_EXTENT2D(surfaceCapabilities.maxImageExtent) << std::endl
               << "\tmaxImageArrayLayers: " << surfaceCapabilities.maxImageArrayLayers << std::endl
-              << "\tsupportedTransforms: "
-              << vk::to_string(surfaceCapabilities.supportedTransforms) << std::endl
-              << "\tcurrentTransform: " << vk::to_string(surfaceCapabilities.currentTransform)
+              << "\tsupportedTransforms: " << vk::to_string(surfaceCapabilities.supportedTransforms) << std::endl
+              << "\tcurrentTransform: " << vk::to_string(surfaceCapabilities.currentTransform) << std::endl
+              << "\tsupportedCompositeAlpha: " << vk::to_string(surfaceCapabilities.supportedCompositeAlpha)
               << std::endl
-              << "\tsupportedCompositeAlpha: "
-              << vk::to_string(surfaceCapabilities.supportedCompositeAlpha) << std::endl
-              << "\tsupportedUsageFlags: "
-              << vk::to_string(surfaceCapabilities.supportedUsageFlags) << std::endl;
+              << "\tsupportedUsageFlags: " << vk::to_string(surfaceCapabilities.supportedUsageFlags) << std::endl;
   Utils::Logger::Get().LogDebugEx(
     u8"Device surface capabilities", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
 
@@ -424,13 +422,14 @@ bool VulkanRenderer::CreateDevice()
     }
     Utils::Logger::Get().LogDebugEx(
       u8"Vulkan device creation", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+    debugOutput.str(std::string());
     debugOutput.clear();
 
     // Get device queue family properties
     std::vector<vk::QueueFamilyProperties2> queueFamilyProperties =
       physicalDevices[deviceIdx].getQueueFamilyProperties2();
 
-    debugOutput << "\nQueue family count: " << queueFamilyProperties.size() << std::endl;
+    debugOutput << "Queue family count: " << queueFamilyProperties.size() << std::endl;
     for (decltype(queueFamilyProperties)::size_type queueFamilyIdx = 0; queueFamilyIdx != queueFamilyProperties.size();
          ++queueFamilyIdx) {
       if (queueFamilyIdx != 0) {
@@ -449,7 +448,8 @@ bool VulkanRenderer::CreateDevice()
                   << std::endl;
     }
     Utils::Logger::Get().LogDebugEx(
-      u8"Vulkan device creation", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+      u8"Vulkan queue families", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+    debugOutput.str(std::string());
     debugOutput.clear();
 
     if (RequiredDeviceExtensionsAvailable(physicalDevices[deviceIdx], requiredDeviceExtensions)
@@ -513,7 +513,7 @@ bool VulkanRenderer::CreateDevice()
 
   m_VulkanParameters.m_Device = m_VulkanParameters.m_PhysicalDevice.createDevice(deviceCreateInfo);
   VULKAN_HPP_DEFAULT_DISPATCHER.init(m_VulkanParameters.m_Device);
-  Utils::Logger::Get().LogDebug(u8"Vulkan device created.", u8"Renderer");
+  Utils::Logger::Get().LogDebugEx(u8"Vulkan device created.", u8"Renderer", __FILE__, __func__, __LINE__);
 
   return true;
 }
@@ -627,14 +627,14 @@ bool VulkanRenderer::CreateSwapchain()
     GetSupportedSurfaceFormats(m_VulkanParameters.m_PhysicalDevice, m_VulkanParameters.m_PresentSurface);
 
   std::ostringstream debugOutput;
-  debugOutput << "\nSupported surface format pairs: " << std::endl;
+  debugOutput << "Supported surface format pairs: " << std::endl;
   for (decltype(supportedSurfaceFormats)::size_type idx = 0; idx != supportedSurfaceFormats.size(); ++idx) {
     if (idx != 0) {
       debugOutput << std::endl;
     }
     debugOutput << "\t#" << idx << " colorSpace: " << vk::to_string(supportedSurfaceFormats[idx].colorSpace)
-                  << std::endl
-                  << "\t#" << idx << " format: " << vk::to_string(supportedSurfaceFormats[idx].format) << std::endl;
+                << std::endl
+                << "\t#" << idx << " format: " << vk::to_string(supportedSurfaceFormats[idx].format) << std::endl;
   }
 
   std::vector<vk::PresentModeKHR> supportedPresentationModes =
@@ -653,14 +653,16 @@ bool VulkanRenderer::CreateSwapchain()
   vk::PresentModeKHR const desiredPresentationMode = GetSwapchainPresentMode(supportedPresentationModes);
 
   debugOutput << "\nSwapchain creation setup:" << std::endl
-                << "\tImage count: " << desiredImageCount << std::endl
-                << "\tImage format: " << vk::to_string(desiredImageFormat.format) << std::endl
-                << "\tColor space: " << vk::to_string(desiredImageFormat.colorSpace) << std::endl
-                << "\tImage extent: " << VK_EXPAND_EXTENT2D(desiredImageExtent) << std::endl
-                << "\tUsage flags: " << vk::to_string(desiredSwapchainUsageFlags) << std::endl
-                << "\tSurface transform: " << vk::to_string(desiredSwapchainTransform) << std::endl
-                << "\tPresentation mode: " << vk::to_string(desiredPresentationMode) << std::endl;
-  Utils::Logger::Get().LogDebugEx(u8"Swapchain creation", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+              << "\tImage count: " << desiredImageCount << std::endl
+              << "\tImage format: " << vk::to_string(desiredImageFormat.format) << std::endl
+              << "\tColor space: " << vk::to_string(desiredImageFormat.colorSpace) << std::endl
+              << "\tImage extent: " << VK_EXPAND_EXTENT2D(desiredImageExtent) << std::endl
+              << "\tUsage flags: " << vk::to_string(desiredSwapchainUsageFlags) << std::endl
+              << "\tSurface transform: " << vk::to_string(desiredSwapchainTransform) << std::endl
+              << "\tPresentation mode: " << vk::to_string(desiredPresentationMode) << std::endl;
+  Utils::Logger::Get().LogDebugEx(
+    u8"Swapchain creation", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+  debugOutput.str(std::string());
   debugOutput.clear();
 
   // NOTE: There is a race condition here. If the OS changes the window size between the calls to
@@ -699,7 +701,9 @@ bool VulkanRenderer::CreateSwapchain()
   m_VulkanParameters.m_Swapchain.m_Format = desiredImageFormat.format;
   m_VulkanParameters.m_Swapchain.m_ImageExtent = vk::Extent2D(width, height);
 
-  return CreateSwapchainImageViews();
+  bool imageViewCreateResult = CreateSwapchainImageViews();
+  Utils::Logger::Get().LogDebugEx(u8"Swapchain created.", u8"Renderer", __FILE__, __func__, __LINE__);
+  return imageViewCreateResult;
 }
 
 bool VulkanRenderer::CreateSwapchainImageViews()
@@ -872,7 +876,8 @@ std::tuple<vk::Result, FrameResource> VulkanRenderer::AcquireNextFrameResources(
   auto result = m_VulkanParameters.m_Device.waitForFences(
     m_FrameResources[currentResourceIdx].m_Fence, VK_FALSE, std::numeric_limits<uint64_t>::max());
   if (result != vk::Result::eSuccess) {
-    Utils::Logger::Get().LogErrorEx(u8"Wait on fence timed out", u8"Renderer", __FILE__, __func__, __LINE__);
+    Utils::Logger::Get().LogErrorEx(
+      u8"The wait on acquiring the next frame fence timed out", u8"Renderer", __FILE__, __func__, __LINE__);
     return { result, FrameResource() };
   }
 
