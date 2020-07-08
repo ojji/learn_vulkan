@@ -22,7 +22,7 @@ public:
   typedef void (OnWindowCloseCallback)(Window*);
   explicit Window();
   ~Window();
-  bool Create(TCHAR const windowTitle[]);
+  bool Create(wchar_t const windowTitle[], uint32_t width, uint32_t height);
   void PollEvents();
   void SetOnWindowClose(std::function<OnWindowCloseCallback> callback);
 

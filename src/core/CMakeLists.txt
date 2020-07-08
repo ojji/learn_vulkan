@@ -1,4 +1,5 @@
 set(CORE_HEADERS
+    Application.h
     CopyToLocalBufferJob.h
     CopyToLocalImageJob.h
     CopyToLocalJob.h
@@ -8,7 +9,8 @@ set(CORE_HEADERS
     VulkanFunctions.h
     VulkanRenderer.h)
 
-set(CORE_SOURCES CopyToLocalBufferJob.cpp CopyToLocalImageJob.cpp
-                 CopyToLocalJob.cpp Mat4.cpp VulkanRenderer.cpp)
+set(CORE_SOURCES
+    Application.cpp CopyToLocalBufferJob.cpp CopyToLocalImageJob.cpp
+    CopyToLocalJob.cpp Mat4.cpp VulkanRenderer.cpp)
 
 target_sources(${PROJECT_NAME} PRIVATE ${CORE_HEADERS} ${CORE_SOURCES})

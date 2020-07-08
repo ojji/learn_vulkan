@@ -1,18 +1,18 @@
 #include "../Common.h"
-#include <filesystem>
-#include <tchar.h>
-#include <stdio.h>
+#include "utils/Logger.h"
 #include <Windows.h>
+#include <filesystem>
+#include <stdio.h>
 
-namespace Os
-{
+namespace Os {
 std::filesystem::path GetExecutableDirectory()
 {
   constexpr uint32_t MAX_PATH_LENGTH = 32767;
-  _TCHAR executablePath[MAX_PATH_LENGTH];
+  wchar_t executablePath[MAX_PATH_LENGTH];
 
-  if (!GetModuleFileName(NULL, executablePath, static_cast<DWORD>(MAX_PATH_LENGTH))) {
-    _tprintf(_T("Could not retrieve the executable path\n"));
+  if (!GetModuleFileNameW(NULL, executablePath, static_cast<DWORD>(MAX_PATH_LENGTH))) {
+    Utils::Logger::Get().LogErrorEx(
+      u8"Could not retrieve the executable directory", u8"Filesystem", __FILE__, __func__, __LINE__);
     return std::filesystem::path();
   }
 

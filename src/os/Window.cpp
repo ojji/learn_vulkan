@@ -21,7 +21,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
   Window* window = reinterpret_cast<Window*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
   if (!window) {
-    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
   }
 
   return window->HandleMessage(hwnd, uMsg, wParam, lParam);
@@ -51,7 +51,7 @@ LRESULT Window::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
                << ", repeated: " << std::boolalpha << isRepeated << ", keyUp: " << std::boolalpha << isKeyUp;
     Utils::Logger::Get().LogDebug(logMessage.str(), u8"Keyboard");
 
-    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
   }
 
   case WM_DESTROY: {
@@ -59,14 +59,14 @@ LRESULT Window::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
     return 0;
   }
   default:
-    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
   }
 }
 
-bool Window::Create(TCHAR const windowTitle[])
+bool Window::Create(wchar_t const windowTitle[], uint32_t width, uint32_t height)
 {
 #ifdef VK_USE_PLATFORM_WIN32_KHR
-  m_WindowParameters.m_Instance = GetModuleHandle(nullptr);
+  m_WindowParameters.m_Instance = GetModuleHandleW(nullptr);
   WNDCLASSEX wc = {};
   wc.cbSize = sizeof(WNDCLASSEX);
   wc.lpszClassName = WINDOW_CLASS_NAME;
@@ -76,33 +76,34 @@ bool Window::Create(TCHAR const windowTitle[])
   wc.cbWndExtra = 0;
   wc.hIcon = nullptr;
   wc.hbrBackground = 0;
-  wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+  wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
   wc.style = CS_HREDRAW | CS_VREDRAW;
   wc.hIconSm = nullptr;
   wc.lpszMenuName = nullptr;
 
-  if (!RegisterClassEx(&wc)) {
+  if (!RegisterClassExW(&wc)) {
     return false;
   }
 
-  RECT windowRect{ 0, 0, 1280, 720 };
+  RECT windowRect{ 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
   AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, false);
-  m_WindowParameters.m_Handle = CreateWindow(WINDOW_CLASS_NAME,
-                                             windowTitle,
-                                             WS_OVERLAPPEDWINDOW,
-                                             CW_USEDEFAULT,
-                                             CW_USEDEFAULT,
-                                             windowRect.right - windowRect.left,
-                                             windowRect.bottom - windowRect.top,
-                                             nullptr,
-                                             nullptr,
-                                             m_WindowParameters.m_Instance,
-                                             nullptr);
+  m_WindowParameters.m_Handle = CreateWindowExW(0L,
+                                                WINDOW_CLASS_NAME,
+                                                windowTitle,
+                                                WS_OVERLAPPEDWINDOW,
+                                                CW_USEDEFAULT,
+                                                CW_USEDEFAULT,
+                                                windowRect.right - windowRect.left,
+                                                windowRect.bottom - windowRect.top,
+                                                nullptr,
+                                                nullptr,
+                                                m_WindowParameters.m_Instance,
+                                                nullptr);
   if (!m_WindowParameters.m_Handle) {
     return false;
   }
 
-  SetWindowLongPtr(m_WindowParameters.m_Handle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+  SetWindowLongPtrW(m_WindowParameters.m_Handle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
   ShowWindow(m_WindowParameters.m_Handle, SW_SHOWNORMAL);
   UpdateWindow(m_WindowParameters.m_Handle);
 
@@ -113,14 +114,14 @@ bool Window::Create(TCHAR const windowTitle[])
 void Window::PollEvents()
 {
   MSG msg;
-  while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+  while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
     switch (msg.message) {
     case WM_QUIT: {
       OnWindowClose(this);
     } break;
     }
     TranslateMessage(&msg);
-    DispatchMessage(&msg);
+    DispatchMessageW(&msg);
   }
 }
 

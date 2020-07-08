@@ -144,14 +144,12 @@ public:
                          vk::DeviceSize sourceOffset);
 
   void CopyToLocalImage(std::shared_ptr<Core::CopyToLocalImageJob> transferJob,
-                         vk::CommandBuffer graphicsCommandBuffer,
-                         vk::CommandBuffer transferCommandBuffer,
-                         vk::Buffer sourceBuffer,
-                         vk::DeviceSize sourceOffset);
+                        vk::CommandBuffer graphicsCommandBuffer,
+                        vk::CommandBuffer transferCommandBuffer,
+                        vk::Buffer sourceBuffer,
+                        vk::DeviceSize sourceOffset);
 
-  // @ojji: TODO this does not belong here
   vk::DescriptorSet GetDescriptorSet() { return m_VulkanParameters.m_DescriptorSet; }
-  // @ojji: TODO this does not belong here
   vk::PipelineLayout GetPipelineLayout() { return m_VulkanParameters.m_PipelineLayout; }
 
   [[nodiscard]] vk::Extent2D GetSwapchainExtent() const;
