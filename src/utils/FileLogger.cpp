@@ -66,27 +66,27 @@ bool FileLogger::ShouldLogMessage(LogMessage const& message) const
 
 void FileLogger::LogDebug(LogMessage const& logMessage)
 {
-  Log(u8"DEBUG", logMessage);
+  Log("DEBUG", logMessage);
 }
 
 void FileLogger::LogInfo(LogMessage const& logMessage)
 {
-  Log(u8"INFO", logMessage);
+  Log("INFO", logMessage);
 }
 
 void FileLogger::LogWarning(LogMessage const& logMessage)
 {
-  Log(u8"WARNING", logMessage);
+  Log("WARNING", logMessage);
 }
 
 void FileLogger::LogError(LogMessage const& logMessage)
 {
-  Log(u8"ERROR", logMessage);
+  Log("ERROR", logMessage);
 }
 
 void FileLogger::LogCritical(LogMessage const& logMessage)
 {
-  Log(u8"CRITICAL", logMessage);
+  Log("CRITICAL", logMessage);
 }
 
 void FileLogger::Log(std::string const& type, LogMessage const& logMessage)
@@ -99,9 +99,9 @@ void FileLogger::Log(std::string const& type, LogMessage const& logMessage)
   localtime_s(&buf, &time);
   std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
-  char oldFill = m_FileStream.fill(u8'0');
+  char oldFill = m_FileStream.fill('0');
   m_FileStream << "[";
-  m_FileStream << std::put_time(&buf, u8"%T") << "," << std::setw(3) << ms.count();
+  m_FileStream << std::put_time(&buf, "%T") << "," << std::setw(3) << ms.count();
   m_FileStream << "] " << std::setfill(oldFill);
   m_FileStream << "[";
   m_FileStream << logMessage.Category;

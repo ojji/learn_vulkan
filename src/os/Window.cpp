@@ -49,7 +49,7 @@ LRESULT Window::HandleMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam
     logMessage << "key: " << std::showbase << std::hex << key << ", repeatCount: " << std::dec << repeatCount
                << ", extended: " << std::boolalpha << isExtended << ", alt down: " << std::boolalpha << isAltDown
                << ", repeated: " << std::boolalpha << isRepeated << ", keyUp: " << std::boolalpha << isKeyUp;
-    Utils::Logger::Get().LogDebug(logMessage.str(), u8"Keyboard");
+      Utils::Logger::Get().LogDebug(logMessage.str(), "Keyboard");
 
     return DefWindowProcW(hwnd, uMsg, wParam, lParam);
   }

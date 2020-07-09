@@ -12,7 +12,7 @@ std::filesystem::path GetExecutableDirectory()
 
   if (!GetModuleFileNameW(NULL, executablePath, static_cast<DWORD>(MAX_PATH_LENGTH))) {
     Utils::Logger::Get().LogErrorEx(
-      u8"Could not retrieve the executable directory", u8"Filesystem", __FILE__, __func__, __LINE__);
+      "Could not retrieve the executable directory", "Filesystem", __FILE__, __func__, __LINE__);
     return std::filesystem::path();
   }
 

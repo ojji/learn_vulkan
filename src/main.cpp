@@ -43,10 +43,10 @@ public:
     Utils::Logger::Get().Register<Utils::FileLogger>(debugLog, Utils::FileLogger::OpenMode::Truncate);
     Utils::Logger::Get().Register<Utils::FileLogger>(keyboardLog,
                                                      Utils::FileLogger::OpenMode::Truncate,
-                                                     std::initializer_list<std::string>{ std::string(u8"Keyboard") });
+                                                     std::initializer_list<std::string>{ std::string("Keyboard") });
     Utils::Logger::Get().Register<Utils::FileLogger>(rendererLog,
                                                      Utils::FileLogger::OpenMode::Truncate,
-                                                     std::initializer_list<std::string>{ std::string(u8"Renderer") });
+                                                     std::initializer_list<std::string>{ std::string("Renderer") });
   }
 
   virtual ~SampleApp() {}
@@ -242,7 +242,7 @@ public:
     double fps = 1.0 / (frameTimeInMs / 1'000);
     std::ostringstream fpsMessage;
     fpsMessage << "GPU time: " << frameTimeInMs << " ms (" << fps << " fps)";
-    Utils::Logger::Get().LogDebug(fpsMessage.str(), u8"FrameStat");
+    Utils::Logger::Get().LogDebug(fpsMessage.str(), "FrameStat");
   }
 
   void OnDestroyRenderer()

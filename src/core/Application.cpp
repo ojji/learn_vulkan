@@ -170,11 +170,8 @@ void Application::RenderCore()
   case vk::Result::eSuboptimalKHR: {
   } break;
   case vk::Result::eErrorOutOfDateKHR: {
-    Utils::Logger::Get().LogDebugEx(u8"Swapchain image out of date during acquiring, recreating swapchain",
-                                    u8"Renderer",
-                                    __FILE__,
-                                    __func__,
-                                    __LINE__);
+    Utils::Logger::Get().LogDebugEx(
+      "Swapchain image out of date during acquiring, recreating swapchain", "Renderer", __FILE__, __func__, __LINE__);
     m_VulkanRenderer->RecreateSwapchain();
     return;
   } break;
@@ -216,12 +213,11 @@ void Application::RenderCore()
   } break;
   case vk::Result::eErrorOutOfDateKHR:
   case vk::Result::eSuboptimalKHR: {
-    Utils::Logger::Get().LogDebugEx(
-      u8"Swapchain image suboptimal or out of date during presenting, recreating swapchain",
-      u8"Renderer",
-      __FILE__,
-      __func__,
-      __LINE__);
+    Utils::Logger::Get().LogDebugEx("Swapchain image suboptimal or out of date during presenting, recreating swapchain",
+                                    "Renderer",
+                                    __FILE__,
+                                    __func__,
+                                    __LINE__);
     m_VulkanRenderer->RecreateSwapchain();
     return;
   } break;

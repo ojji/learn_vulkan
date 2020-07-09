@@ -49,45 +49,45 @@ public:
     m_Loggers.emplace_back(std::make_unique<TLogger>(std::forward<TArgs>(args)...));
   };
 
-  void LogDebug(std::string message, std::string category = u8"", std::string longMessage = u8"");
+  void LogDebug(std::string message, std::string category = "", std::string longMessage = "");
   void LogDebugEx(std::string message,
                   std::string category,
                   std::string file,
                   std::string func,
                   int line,
-                  std::string longMessage = u8"");
+                  std::string longMessage = "");
 
-  void LogInfo(std::string message, std::string category = u8"", std::string longMessage = u8"");
+  void LogInfo(std::string message, std::string category = "", std::string longMessage = "");
   void LogInfoEx(std::string message,
                  std::string category,
                  std::string file,
                  std::string func,
                  int line,
-                 std::string longMessage = u8"");
+                 std::string longMessage = "");
 
-  void LogWarning(std::string message, std::string category = u8"", std::string longMessage = u8"");
+  void LogWarning(std::string message, std::string category = "", std::string longMessage = "");
   void LogWarningEx(std::string message,
                     std::string category,
                     std::string file,
                     std::string func,
                     int line,
-                    std::string longMessage = u8"");
+                    std::string longMessage = "");
 
-  void LogError(std::string message, std::string category = u8"", std::string longMessage = u8"");
+  void LogError(std::string message, std::string category = "", std::string longMessage = "");
   void LogErrorEx(std::string message,
                   std::string category,
                   std::string file,
                   std::string func,
                   int line,
-                  std::string longMessage = u8"");
+                  std::string longMessage = "");
 
-  void LogCritical(std::string message, std::string category = u8"", std::string longMessage = u8"");
+  void LogCritical(std::string message, std::string category = "", std::string longMessage = "");
   void LogCriticalEx(std::string message,
                      std::string category,
                      std::string file,
                      std::string func,
                      int line,
-                     std::string longMessage = u8"");
+                     std::string longMessage = "");
 
 private:
   Logger() = default;

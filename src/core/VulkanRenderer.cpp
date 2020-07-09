@@ -148,7 +148,7 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
     debugOutput << "\t#" << idx << " extensionName: " << instanceExtensions[idx].extensionName
                 << " (specVersion: " << instanceExtensions[idx].specVersion << ")" << std::endl;
   }
-  Utils::Logger::Get().LogDebugEx(u8"Vulkan properties", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+  Utils::Logger::Get().LogDebugEx("Vulkan properties", "Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
   debugOutput.str(std::string());
   debugOutput.clear();
 
@@ -173,7 +173,7 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
                   << " (specVersion: " << layerExtensions[idx].specVersion << ")" << std::endl;
     }
   }
-  Utils::Logger::Get().LogDebugEx(u8"Vulkan properties", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+  Utils::Logger::Get().LogDebugEx("Vulkan properties", "Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
   debugOutput.str(std::string());
   debugOutput.clear();
 
@@ -183,7 +183,7 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
 
   if (!CreatePresentationSurface()) {
     Utils::Logger::Get().LogCriticalEx(
-      u8"Could not create the presentation surface", u8"Renderer", __FILE__, __func__, __LINE__);
+      "Could not create the presentation surface", "Renderer", __FILE__, __func__, __LINE__);
     return false;
   }
 
@@ -345,7 +345,7 @@ vk::SurfaceCapabilitiesKHR VulkanRenderer::GetDeviceSurfaceCapabilities(vk::Phys
               << std::endl
               << "\tsupportedUsageFlags: " << vk::to_string(surfaceCapabilities.supportedUsageFlags) << std::endl;
   Utils::Logger::Get().LogDebugEx(
-    u8"Device surface capabilities", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+    "Device surface capabilities", "Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
 
   return surfaceCapabilities;
 }
@@ -421,7 +421,7 @@ bool VulkanRenderer::CreateDevice()
                   << "\tFlags " << vk::to_string(memoryProperties.memoryHeaps[memoryHeapIdx].flags) << std::endl;
     }
     Utils::Logger::Get().LogDebugEx(
-      u8"Vulkan device creation", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+      "Vulkan device creation", "Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
     debugOutput.str(std::string());
     debugOutput.clear();
 
@@ -448,7 +448,7 @@ bool VulkanRenderer::CreateDevice()
                   << std::endl;
     }
     Utils::Logger::Get().LogDebugEx(
-      u8"Vulkan queue families", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+      "Vulkan queue families", "Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
     debugOutput.str(std::string());
     debugOutput.clear();
 
@@ -513,7 +513,7 @@ bool VulkanRenderer::CreateDevice()
 
   m_VulkanParameters.m_Device = m_VulkanParameters.m_PhysicalDevice.createDevice(deviceCreateInfo);
   VULKAN_HPP_DEFAULT_DISPATCHER.init(m_VulkanParameters.m_Device);
-  Utils::Logger::Get().LogDebugEx(u8"Vulkan device created.", u8"Renderer", __FILE__, __func__, __LINE__);
+  Utils::Logger::Get().LogDebugEx("Vulkan device created.", "Renderer", __FILE__, __func__, __LINE__);
 
   return true;
 }
@@ -660,8 +660,7 @@ bool VulkanRenderer::CreateSwapchain()
               << "\tUsage flags: " << vk::to_string(desiredSwapchainUsageFlags) << std::endl
               << "\tSurface transform: " << vk::to_string(desiredSwapchainTransform) << std::endl
               << "\tPresentation mode: " << vk::to_string(desiredPresentationMode) << std::endl;
-  Utils::Logger::Get().LogDebugEx(
-    u8"Swapchain creation", u8"Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
+  Utils::Logger::Get().LogDebugEx("Swapchain creation", "Renderer", __FILE__, __func__, __LINE__, debugOutput.str());
   debugOutput.str(std::string());
   debugOutput.clear();
 
@@ -702,7 +701,7 @@ bool VulkanRenderer::CreateSwapchain()
   m_VulkanParameters.m_Swapchain.m_ImageExtent = vk::Extent2D(width, height);
 
   bool imageViewCreateResult = CreateSwapchainImageViews();
-  Utils::Logger::Get().LogDebugEx(u8"Swapchain created.", u8"Renderer", __FILE__, __func__, __LINE__);
+  Utils::Logger::Get().LogDebugEx("Swapchain created.", "Renderer", __FILE__, __func__, __LINE__);
   return imageViewCreateResult;
 }
 
@@ -877,7 +876,7 @@ std::tuple<vk::Result, FrameResource> VulkanRenderer::AcquireNextFrameResources(
     m_FrameResources[currentResourceIdx].m_Fence, VK_FALSE, std::numeric_limits<uint64_t>::max());
   if (result != vk::Result::eSuccess) {
     Utils::Logger::Get().LogErrorEx(
-      u8"The wait on acquiring the next frame fence timed out", u8"Renderer", __FILE__, __func__, __LINE__);
+      "The wait on acquiring the next frame fence timed out", "Renderer", __FILE__, __func__, __LINE__);
     return { result, FrameResource() };
   }
 
