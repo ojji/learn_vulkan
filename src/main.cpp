@@ -58,6 +58,16 @@ public:
   bool Initialize()
   {
     Application::Initialize(L"Hello Vulkan!", 1280, 720);
+    GetWindow()->SetOnCharacterReceived([this](Os::Window* window, uint32_t codePoint, Core::ModifierKeys modifiers) {
+      OnCharacterReceived(window, codePoint, modifiers);
+    });
+
+    GetWindow()->SetOnKeyEvent(
+      [this](Os::Window* window,
+             uint8_t keyCode,
+             Core::KeypressAction action,
+             Core::ModifierKeys modifiers,
+             uint16_t repeatCount) { OnKeyEvent(window, keyCode, action, modifiers, repeatCount); });
 
     std::array<float, 4> color = { (85.0f / 255.0f), (87.0f / 255.0f), (112.0f / 255.0f), 0.0f };
     std::array<float, 4> otherColor = { (179.0f / 255.0f), (147.0f / 255.0f), (29.0f / 255.0f), 0.0f };
@@ -67,6 +77,35 @@ public:
     QueryPerformanceFrequency(&m_Frequency);
 
     return true;
+  }
+
+
+  void OnCharacterReceived(Os::Window* window, uint32_t codePoint, Core::ModifierKeys modifiers)
+  {
+    (void)window;
+    (void)codePoint;
+    (void)modifiers;
+    std::ostringstream debugMessage;
+    debugMessage << "Character received: " << std::showbase << std::hex << codePoint
+                 << ", modifiers: " << Core::enum_to_string(modifiers);
+    Utils::Logger::Get().LogDebug(debugMessage.str(), "Keyboard");
+  }
+
+  void OnKeyEvent(Os::Window* window,
+                  uint8_t keyCode,
+                  Core::KeypressAction action,
+                  Core::ModifierKeys modifiers,
+                  uint16_t repeatCount)
+  {
+    (void)window;
+    (void)keyCode;
+    (void)action;
+    (void)modifiers;
+    (void)repeatCount;
+    std::ostringstream debugMessage;
+    debugMessage << "Keycode " << std::showbase << std::hex << static_cast<int>(keyCode) << " " << Core::enum_to_string(action)
+                 << ", modifiers: " << Core::enum_to_string(modifiers) << ", repeatCount: " << std::dec << repeatCount;
+    Utils::Logger::Get().LogDebug(debugMessage.str(), "Keyboard");
   }
 
   void InitializeRenderer() override

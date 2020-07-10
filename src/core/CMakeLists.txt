@@ -3,6 +3,7 @@ set(CORE_HEADERS
     CopyToLocalBufferJob.h
     CopyToLocalImageJob.h
     CopyToLocalJob.h
+    Input.h
     Mat4.h
     stb_image.h
     Transition.h

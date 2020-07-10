@@ -17,6 +17,7 @@ public:
 
 protected:
   inline Core::VulkanRenderer* Renderer() const { return m_VulkanRenderer.get(); }
+  inline Os::Window* GetWindow() const { return m_Window.get(); }
 
   virtual void InitializeRenderer() = 0;
   virtual void PreRender(Core::FrameResource const& frameResources) = 0;
