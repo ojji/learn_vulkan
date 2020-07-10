@@ -12,8 +12,7 @@ Application::~Application()
 
 bool Application::Start()
 {
-  auto onWindowCloseWrapper = std::bind(&Application::OnWindowClose, this, std::placeholders::_1);
-  m_Window->SetOnWindowClose(onWindowCloseWrapper);
+  m_Window->SetOnWindowClose([this](Os::Window* window) { OnWindowClose(window); });
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
   m_IsRunning = true;
