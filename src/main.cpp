@@ -276,13 +276,9 @@ int main()
 {
   SampleApp app;
 
-  if (!app.Initialize()) {
-    return 1;
-  }
+  if (!app.Initialize()) { return 1; }
 
-  if (!app.Start()) {
-    return 1;
-  }
+  if (!app.Start()) { return 1; }
 
   return 0;
 }

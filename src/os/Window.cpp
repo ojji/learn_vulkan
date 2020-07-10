@@ -20,9 +20,8 @@ constexpr wchar_t WINDOW_CLASS_NAME[] = L"Learn_Vulkan";
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
   Window* window = reinterpret_cast<Window*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
-  if (!window) {
-    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
-  }
+
+  if (!window) { return DefWindowProcW(hwnd, uMsg, wParam, lParam); }
 
   return window->HandleMessage(hwnd, uMsg, wParam, lParam);
 }
@@ -81,9 +80,7 @@ bool Window::Create(wchar_t const windowTitle[], uint32_t width, uint32_t height
   wc.hIconSm = nullptr;
   wc.lpszMenuName = nullptr;
 
-  if (!RegisterClassExW(&wc)) {
-    return false;
-  }
+  if (!RegisterClassExW(&wc)) { return false; }
 
   RECT windowRect{ 0, 0, static_cast<LONG>(width), static_cast<LONG>(height) };
   AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, false);
@@ -99,9 +96,7 @@ bool Window::Create(wchar_t const windowTitle[], uint32_t width, uint32_t height
                                                 nullptr,
                                                 m_WindowParameters.m_Instance,
                                                 nullptr);
-  if (!m_WindowParameters.m_Handle) {
-    return false;
-  }
+  if (!m_WindowParameters.m_Handle) { return false; }
 
   SetWindowLongPtrW(m_WindowParameters.m_Handle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
   ShowWindow(m_WindowParameters.m_Handle, SW_SHOWNORMAL);
@@ -137,8 +132,7 @@ WindowParameters Window::GetWindowParameters() const
 
 void Window::OnWindowClose(Window* window)
 {
-  if (m_OnWindowClose) {
-    m_OnWindowClose(window);
-  }
+  if (m_OnWindowClose) { m_OnWindowClose(window); }
 }
+
 } // namespace Os

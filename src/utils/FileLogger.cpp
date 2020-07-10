@@ -17,9 +17,7 @@ FileLogger::FileLogger(std::filesystem::path const& path,
     m_FileStream.open(path.c_str(), std::ios::trunc | std::ios::out);
   }
 
-  if (!m_FileStream.is_open()) {
-    throw std::runtime_error("Could not open file " + path.string());
-  }
+  if (!m_FileStream.is_open()) { throw std::runtime_error("Could not open file " + path.string()); }
 
   std::vector<std::string> categories = std::vector<std::string>(categoriesToLog.begin(), categoriesToLog.end());
   m_FilterFn = [categories](LogMessage const& logMessage) -> bool {
@@ -125,8 +123,6 @@ void FileLogger::Log(std::string const& type, LogMessage const& logMessage)
   } else {
     m_FileStream << std::endl;
   }
-  if (!logMessage.LongMessage.empty()) {
-    m_FileStream << logMessage.LongMessage << std::endl;
-  }
+  if (!logMessage.LongMessage.empty()) { m_FileStream << logMessage.LongMessage << std::endl; }
 }
 } // namespace Utils

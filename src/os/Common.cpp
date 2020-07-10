@@ -13,9 +13,8 @@ std::vector<char> ReadContentFromBinaryFile(char const* filename)
   std::vector<char> fileContent;
   std::filesystem::path filePath = Os::GetExecutableDirectory() / filename;
   std::ifstream file(filePath, std::ios::binary | std::ios::ate);
-  if (!file.is_open()) {
-    throw std::runtime_error(std::string("Could not open shader file: ") + filePath.string());
-  }
+
+  if (!file.is_open()) { throw std::runtime_error(std::string("Could not open shader file: ") + filePath.string()); }
 
   size_t contentSize = file.tellg();
   fileContent.resize(contentSize);
@@ -36,9 +35,8 @@ std::vector<char> LoadTextureData(char const* filename, uint32_t& width, uint32_
                                              &tempHeight,
                                              &components,
                                              4);
-  if (imageData == nullptr) {
-    throw std::runtime_error("Could not load image");
-  }
+
+  if (imageData == nullptr) { throw std::runtime_error("Could not load image"); }
 
   width = tempWidth;
   height = tempHeight;

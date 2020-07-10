@@ -75,9 +75,7 @@ void VulkanRenderer::Free()
       m_VulkanParameters.m_Device.destroyPipelineLayout(m_VulkanParameters.m_PipelineLayout);
     }
 
-    if (m_VulkanParameters.m_Pipeline) {
-      m_VulkanParameters.m_Device.destroyPipeline(m_VulkanParameters.m_Pipeline);
-    }
+    if (m_VulkanParameters.m_Pipeline) { m_VulkanParameters.m_Device.destroyPipeline(m_VulkanParameters.m_Pipeline); }
 
     if (m_VulkanParameters.m_RenderPass) {
       m_VulkanParameters.m_Device.destroyRenderPass(m_VulkanParameters.m_RenderPass);
@@ -133,9 +131,7 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
 
   debugOutput << "\nAvailable layers:" << std::endl;
   for (decltype(layers)::size_type idx = 0; idx != layers.size(); ++idx) {
-    if (idx != 0) {
-      debugOutput << std::endl;
-    }
+    if (idx != 0) { debugOutput << std::endl; }
     debugOutput << "\t#" << idx << " layerName: " << layers[idx].layerName << std::endl
                 << "\t#" << idx << " specVersion: " << VK_EXPAND_VERSION(layers[idx].specVersion) << std::endl
                 << "\t#" << idx << " implementationVersion: " << layers[idx].implementationVersion << std::endl
@@ -177,9 +173,7 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
   debugOutput.str(std::string());
   debugOutput.clear();
 
-  if (!CreateInstance(requiredExtensions)) {
-    return false;
-  }
+  if (!CreateInstance(requiredExtensions)) { return false; }
 
   if (!CreatePresentationSurface()) {
     Utils::Logger::Get().LogCriticalEx(
@@ -187,45 +181,25 @@ bool VulkanRenderer::Initialize(Os::WindowParameters windowParameters)
     return false;
   }
 
-  if (!CreateDevice()) {
-    return false;
-  }
+  if (!CreateDevice()) { return false; }
 
-  if (!CreateGraphicsQueue()) {
-    return false;
-  }
+  if (!CreateGraphicsQueue()) { return false; }
 
-  if (!CreateTransferQueue()) {
-    return false;
-  }
+  if (!CreateTransferQueue()) { return false; }
 
-  if (!CreateSwapchain()) {
-    return false;
-  }
+  if (!CreateSwapchain()) { return false; }
 
-  if (!CreateDescriptorSetLayout()) {
-    return false;
-  }
+  if (!CreateDescriptorSetLayout()) { return false; }
 
-  if (!CreateDescriptorPool()) {
-    return false;
-  }
+  if (!CreateDescriptorPool()) { return false; }
 
-  if (!AllocateDescriptorSet()) {
-    return false;
-  }
+  if (!AllocateDescriptorSet()) { return false; }
 
-  if (!CreateRenderPass()) {
-    return false;
-  }
+  if (!CreateRenderPass()) { return false; }
 
-  if (!CreatePipeline()) {
-    return false;
-  }
+  if (!CreatePipeline()) { return false; }
 
-  if (!CreateQueryPool()) {
-    return false;
-  }
+  if (!CreateQueryPool()) { return false; }
 
   return true;
 }
@@ -250,9 +224,7 @@ bool VulkanRenderer::RequiredInstanceExtensionsAvailable(std::vector<char const*
   std::vector<vk::ExtensionProperties> instanceExtensions = GetVulkanInstanceExtensions();
   return std::all_of(requiredExtensions.cbegin(), requiredExtensions.cend(), [&](char const* extensionName) {
     for (auto const& instanceExtension : instanceExtensions) {
-      if (strcmp(instanceExtension.extensionName, extensionName) == 0) {
-        return true;
-      }
+      if (strcmp(instanceExtension.extensionName, extensionName) == 0) { return true; }
     }
     return false;
   });
@@ -317,9 +289,7 @@ bool VulkanRenderer::RequiredDeviceExtensionsAvailable(vk::PhysicalDevice physic
 
   return std::all_of(requiredExtensions.cbegin(), requiredExtensions.cend(), [&](char const* extensionName) {
     for (auto const& deviceExtension : availableExtensions) {
-      if (strcmp(extensionName, deviceExtension.extensionName) == 0) {
-        return true;
-      }
+      if (strcmp(extensionName, deviceExtension.extensionName) == 0) { return true; }
     }
     return false;
   });
@@ -432,9 +402,7 @@ bool VulkanRenderer::CreateDevice()
     debugOutput << "Queue family count: " << queueFamilyProperties.size() << std::endl;
     for (decltype(queueFamilyProperties)::size_type queueFamilyIdx = 0; queueFamilyIdx != queueFamilyProperties.size();
          ++queueFamilyIdx) {
-      if (queueFamilyIdx != 0) {
-        debugOutput << std::endl;
-      }
+      if (queueFamilyIdx != 0) { debugOutput << std::endl; }
       debugOutput << "\t#" << queueFamilyIdx << " queueFlags: "
                   << vk::to_string(queueFamilyProperties[queueFamilyIdx].queueFamilyProperties.queueFlags) << std::endl
                   << "\t#" << queueFamilyIdx
@@ -478,9 +446,7 @@ bool VulkanRenderer::CreateDevice()
     }
   }
 
-  if (!presentQueueFound) {
-    throw std::runtime_error("Could not find a suitable device with WSI surface support");
-  }
+  if (!presentQueueFound) { throw std::runtime_error("Could not find a suitable device with WSI surface support"); }
 
   if (presentQueueFound && !transferQueueFound) {
     m_VulkanParameters.m_TransferQueueFamilyIdx = m_VulkanParameters.m_GraphicsQueueFamilyIdx;
@@ -584,9 +550,7 @@ vk::SurfaceFormatKHR VulkanRenderer::GetSwapchainFormat(
     }
   }
 
-  if (foundBGRA || foundRGBA) {
-    return desiredSurfaceFormat;
-  }
+  if (foundBGRA || foundRGBA) { return desiredSurfaceFormat; }
 
   return supportedSurfaceFormats[0];
 }
@@ -629,9 +593,7 @@ bool VulkanRenderer::CreateSwapchain()
   std::ostringstream debugOutput;
   debugOutput << "Supported surface format pairs: " << std::endl;
   for (decltype(supportedSurfaceFormats)::size_type idx = 0; idx != supportedSurfaceFormats.size(); ++idx) {
-    if (idx != 0) {
-      debugOutput << std::endl;
-    }
+    if (idx != 0) { debugOutput << std::endl; }
     debugOutput << "\t#" << idx << " colorSpace: " << vk::to_string(supportedSurfaceFormats[idx].colorSpace)
                 << std::endl
                 << "\t#" << idx << " format: " << vk::to_string(supportedSurfaceFormats[idx].format) << std::endl;
@@ -792,21 +754,15 @@ void VulkanRenderer::FreeFrameResource(FrameResource& frameResource)
   if (frameResource.m_UniformBuffer.m_Handle) {
     m_VulkanParameters.m_Device.destroyBuffer(frameResource.m_UniformBuffer.m_Handle);
   }
-  if (frameResource.m_Fence) {
-    m_VulkanParameters.m_Device.destroyFence(frameResource.m_Fence);
-  }
+  if (frameResource.m_Fence) { m_VulkanParameters.m_Device.destroyFence(frameResource.m_Fence); }
   if (frameResource.m_PresentToDrawSemaphore) {
     m_VulkanParameters.m_Device.destroySemaphore(frameResource.m_PresentToDrawSemaphore);
   }
   if (frameResource.m_DrawToPresentSemaphore) {
     m_VulkanParameters.m_Device.destroySemaphore(frameResource.m_DrawToPresentSemaphore);
   }
-  if (frameResource.m_Framebuffer) {
-    m_VulkanParameters.m_Device.destroyFramebuffer(frameResource.m_Framebuffer);
-  }
-  if (frameResource.m_QueryPool) {
-    m_VulkanParameters.m_Device.destroyQueryPool(frameResource.m_QueryPool);
-  }
+  if (frameResource.m_Framebuffer) { m_VulkanParameters.m_Device.destroyFramebuffer(frameResource.m_Framebuffer); }
+  if (frameResource.m_QueryPool) { m_VulkanParameters.m_Device.destroyQueryPool(frameResource.m_QueryPool); }
 }
 
 bool VulkanRenderer::CreateQueryPool()
@@ -1138,14 +1094,10 @@ bool VulkanRenderer::CreateRenderPass()
 bool VulkanRenderer::CreatePipeline()
 {
   auto vertexShaderModule = CreateShaderModule("shaders/shader.vert.spv");
-  if (!vertexShaderModule) {
-    return false;
-  }
+  if (!vertexShaderModule) { return false; }
 
   auto fragmentShaderModule = CreateShaderModule("shaders/shader.frag.spv");
-  if (!fragmentShaderModule) {
-    return false;
-  }
+  if (!fragmentShaderModule) { return false; }
 
   auto shaderStages = std::vector<vk::PipelineShaderStageCreateInfo>(
     { vk::PipelineShaderStageCreateInfo(
@@ -1292,9 +1244,7 @@ bool VulkanRenderer::CreatePipeline()
 vk::UniqueShaderModule VulkanRenderer::CreateShaderModule(char const* filename)
 {
   std::vector<char> code = Os::ReadContentFromBinaryFile(filename);
-  if (code.empty()) {
-    throw std::runtime_error("Could not read shader file or its empty");
-  }
+  if (code.empty()) { throw std::runtime_error("Could not read shader file or its empty"); }
   auto shaderModuleCreateInfo =
     vk::ShaderModuleCreateInfo({},          // vk::ShaderModuleCreateFlags flags_ = {}, reserved
                                code.size(), // size_t codeSize_ = {},
@@ -1330,9 +1280,7 @@ bool VulkanRenderer::RecreateSwapchain()
     m_VulkanParameters.m_Swapchain.m_Handle = nullptr;
   }
 
-  if (!CreateSwapchain()) {
-    return false;
-  }
+  if (!CreateSwapchain()) { return false; }
   return true;
 }
 
@@ -1386,12 +1334,8 @@ void VulkanRenderer::SubmitToTransferQueue(vk::SubmitInfo& submitInfo, vk::Fence
 void VulkanRenderer::FreeBuffer(BufferData& buffer)
 {
   m_VulkanParameters.m_Device.waitIdle();
-  if (buffer.m_Memory) {
-    m_VulkanParameters.m_Device.freeMemory(buffer.m_Memory);
-  }
-  if (buffer.m_Handle) {
-    m_VulkanParameters.m_Device.destroyBuffer(buffer.m_Handle);
-  }
+  if (buffer.m_Memory) { m_VulkanParameters.m_Device.freeMemory(buffer.m_Memory); }
+  if (buffer.m_Handle) { m_VulkanParameters.m_Device.destroyBuffer(buffer.m_Handle); }
 }
 
 bool VulkanRenderer::CreateFramebuffer(vk::Framebuffer& framebuffer, vk::ImageView& imageView)
@@ -1680,12 +1624,8 @@ ImageData VulkanRenderer::CreateImage(uint32_t width,
 void VulkanRenderer::FreeImage(ImageData& imageData)
 {
   m_VulkanParameters.m_Device.waitIdle();
-  if (imageData.m_Memory) {
-    m_VulkanParameters.m_Device.freeMemory(imageData.m_Memory);
-  }
-  if (imageData.m_Handle) {
-    m_VulkanParameters.m_Device.destroyImage(imageData.m_Handle);
-  }
+  if (imageData.m_Memory) { m_VulkanParameters.m_Device.freeMemory(imageData.m_Memory); }
+  if (imageData.m_Handle) { m_VulkanParameters.m_Device.destroyImage(imageData.m_Handle); }
 }
 
 } // namespace Core

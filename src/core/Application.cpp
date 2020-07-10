@@ -34,12 +34,8 @@ bool Application::Start()
 
 bool Application::Initialize(wchar_t const title[], uint32_t width, uint32_t height)
 {
-  if (!m_Window->Create(title, width, height)) {
-    return false;
-  }
-  if (!m_VulkanRenderer->Initialize(m_Window->GetWindowParameters())) {
-    return false;
-  }
+  if (!m_Window->Create(title, width, height)) { return false; }
+  if (!m_VulkanRenderer->Initialize(m_Window->GetWindowParameters())) { return false; }
 
   return true;
 }
@@ -56,9 +52,7 @@ void Application::RenderThreadStart()
   InitializeRendererCore();
   while (m_IsRunning) {
     // Draw here if you can
-    if (m_VulkanRenderer->CanRender()) {
-      RenderCore();
-    }
+    if (m_VulkanRenderer->CanRender()) { RenderCore(); }
   }
 
   DestroyRendererCore();
@@ -101,9 +95,7 @@ void Application::TransferThreadStart()
 
         vk::DeviceSize offsetRoundedDown = bytesInUse - (bytesInUse & (nonCoherentAtomSize - 1));
         vk::DeviceSize sizeRoundedUp = ((currentJob->GetSize() + nonCoherentAtomSize - 1) & (~nonCoherentAtomSize + 1));
-        if (bytesInUse > offsetRoundedDown) {
-          sizeRoundedUp += nonCoherentAtomSize;
-        }
+        if (bytesInUse > offsetRoundedDown) { sizeRoundedUp += nonCoherentAtomSize; }
 
         auto mappedMemoryRange = vk::MappedMemoryRange(stagingBuffer.m_Memory, // vk::DeviceMemory memory_ = {},
                                                        offsetRoundedDown,      // vk::DeviceSize offset_ = {},

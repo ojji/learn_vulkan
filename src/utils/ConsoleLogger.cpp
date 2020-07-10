@@ -65,9 +65,8 @@ void ConsoleLogger::Log(std::string const& type,
 
   std::cout << std::setw(8) << messageColor << type << ": ";
   if (!logMessage.Message.empty()) {
-     std::cout << logMessage.Message << ResetColor << std::endl;
-  }
-  else {
+    std::cout << logMessage.Message << ResetColor << std::endl;
+  } else {
     std::cout << ResetColor << std::endl;
   }
   if (!logMessage.LongMessage.empty()) {

@@ -10,9 +10,7 @@ void Logger::LogDebug(std::string message, std::string category, std::string lon
   logMessage.LongMessage = std::move(longMessage);
 
   for (auto const& logger : m_Loggers) {
-    if (logger->ShouldLogMessage(logMessage)) {
-      logger->LogDebug(logMessage);
-    }
+    if (logger->ShouldLogMessage(logMessage)) { logger->LogDebug(logMessage); }
   }
 }
 
@@ -28,9 +26,7 @@ void Logger::LogDebugEx(
   logMessage.LongMessage = std::move(longMessage);
 
   for (auto const& logger : m_Loggers) {
-    if (logger->ShouldLogMessage(logMessage)) {
-      logger->LogDebug(logMessage);
-    }
+    if (logger->ShouldLogMessage(logMessage)) { logger->LogDebug(logMessage); }
   }
 }
 
@@ -42,9 +38,7 @@ void Logger::LogInfo(std::string message, std::string category, std::string long
   logMessage.LongMessage = std::move(longMessage);
 
   for (auto const& logger : m_Loggers) {
-    if (logger->ShouldLogMessage(logMessage)) {
-      logger->LogInfo(logMessage);
-    }
+    if (logger->ShouldLogMessage(logMessage)) { logger->LogInfo(logMessage); }
   }
 }
 
@@ -60,9 +54,7 @@ void Logger::LogInfoEx(
   logMessage.LongMessage = std::move(longMessage);
 
   for (auto const& logger : m_Loggers) {
-    if (logger->ShouldLogMessage(logMessage)) {
-      logger->LogInfo(logMessage);
-    }
+    if (logger->ShouldLogMessage(logMessage)) { logger->LogInfo(logMessage); }
   }
 }
 
@@ -74,9 +66,7 @@ void Logger::LogWarning(std::string message, std::string category, std::string l
   logMessage.LongMessage = std::move(longMessage);
 
   for (auto const& logger : m_Loggers) {
-    if (logger->ShouldLogMessage(logMessage)) {
-      logger->LogWarning(logMessage);
-    }
+    if (logger->ShouldLogMessage(logMessage)) { logger->LogWarning(logMessage); }
   }
 }
 
@@ -92,9 +82,7 @@ void Logger::LogWarningEx(
   logMessage.LongMessage = std::move(longMessage);
 
   for (auto const& logger : m_Loggers) {
-    if (logger->ShouldLogMessage(logMessage)) {
-      logger->LogWarning(logMessage);
-    }
+    if (logger->ShouldLogMessage(logMessage)) { logger->LogWarning(logMessage); }
   }
 }
 
@@ -106,9 +94,7 @@ void Logger::LogError(std::string message, std::string category, std::string lon
   logMessage.LongMessage = std::move(longMessage);
 
   for (auto const& logger : m_Loggers) {
-    if (logger->ShouldLogMessage(logMessage)) {
-      logger->LogError(logMessage);
-    }
+    if (logger->ShouldLogMessage(logMessage)) { logger->LogError(logMessage); }
   }
 }
 
@@ -124,9 +110,7 @@ void Logger::LogErrorEx(
   logMessage.LongMessage = std::move(longMessage);
 
   for (auto const& logger : m_Loggers) {
-    if (logger->ShouldLogMessage(logMessage)) {
-      logger->LogError(logMessage);
-    }
+    if (logger->ShouldLogMessage(logMessage)) { logger->LogError(logMessage); }
   }
 }
 
@@ -138,9 +122,7 @@ void Logger::LogCritical(std::string message, std::string category, std::string 
   logMessage.LongMessage = std::move(longMessage);
 
   for (auto const& logger : m_Loggers) {
-    if (logger->ShouldLogMessage(logMessage)) {
-      logger->LogCritical(logMessage);
-    }
+    if (logger->ShouldLogMessage(logMessage)) { logger->LogCritical(logMessage); }
   }
 }
 
@@ -156,9 +138,8 @@ void Logger::LogCriticalEx(
   logMessage.LongMessage = std::move(longMessage);
 
   for (auto const& logger : m_Loggers) {
-    if (logger->ShouldLogMessage(logMessage)) {
-      logger->LogCritical(logMessage);
-    }
+    if (logger->ShouldLogMessage(logMessage)) { logger->LogCritical(logMessage); }
   }
 }
+
 } // namespace Utils
