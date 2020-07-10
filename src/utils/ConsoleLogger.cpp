@@ -1,10 +1,27 @@
 #include "ConsoleLogger.h"
+#include <algorithm>
 #include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 
 namespace Utils {
+ConsoleLogger::ConsoleLogger(std::string name, int locationLogWidth) :
+  ILogger(std::move(name)),
+  m_LocationLogWidth(locationLogWidth),
+  m_MutedCategories(std::vector<std::string>())
+{}
+
+ConsoleLogger::~ConsoleLogger()
+{}
+
+bool ConsoleLogger::ShouldLogMessage([[maybe_unused]] LogMessage const& logMessage) const
+{
+  auto it = std::find(m_MutedCategories.cbegin(), m_MutedCategories.cend(), logMessage.Category);
+  if (it == m_MutedCategories.cend()) { return true; }
+  return false;
+}
+
 void ConsoleLogger::LogDebug(LogMessage const& logMessage)
 {
   Log("DEBUG", logMessage, PlainCyanColor, PlainCyanColor);
@@ -28,6 +45,17 @@ void ConsoleLogger::LogError(LogMessage const& logMessage)
 void ConsoleLogger::LogCritical(LogMessage const& logMessage)
 {
   Log("CRITICAL", logMessage, CriticalColor, BrightRedColor);
+}
+
+void ConsoleLogger::MuteCategory(std::string const& category)
+{
+  m_MutedCategories.push_back(category);
+}
+
+void ConsoleLogger::UnmuteCategory(std::string const& category)
+{
+  auto it = std::find(m_MutedCategories.begin(), m_MutedCategories.end(), category);
+  if (it != m_MutedCategories.end()) { m_MutedCategories.erase(it); }
 }
 
 void ConsoleLogger::Log(std::string const& type,

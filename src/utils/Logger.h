@@ -22,6 +22,7 @@ struct LogMessage
 class ILogger
 {
 public:
+  ILogger(std::string name) : m_Name(std::move(name)){};
   virtual ~ILogger(){};
   virtual bool ShouldLogMessage(LogMessage const& message) const = 0;
   virtual void LogDebug(LogMessage const& logMessage) = 0;
@@ -30,7 +31,13 @@ public:
   virtual void LogError(LogMessage const& message) = 0;
   virtual void LogCritical(LogMessage const& message) = 0;
 
+  virtual void MuteCategory(std::string const& category) = 0;
+  virtual void UnmuteCategory(std::string const& category) = 0;
+
+  inline std::string GetName() const { return m_Name; }
+
 private:
+  std::string m_Name;
 };
 
 class Logger
@@ -88,6 +95,9 @@ public:
                      std::string func,
                      int line,
                      std::string longMessage = "");
+
+  void MuteCategory(std::string const& loggerToMute, std::string const& category);
+  void UnmuteCategory(std::string const& loggerToUnmute, std::string const& category);
 
 private:
   Logger() = default;

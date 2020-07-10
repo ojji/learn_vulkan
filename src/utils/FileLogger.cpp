@@ -1,14 +1,36 @@
 #include "FileLogger.h"
-#include <sstream>
+#include <algorithm>
 #include <iostream>
+#include <sstream>
 
 namespace Utils {
-FileLogger::FileLogger(std::filesystem::path const& path,
+FileLogger::FileLogger(std::string name,
+                       std::filesystem::path const& path,
                        OpenMode openMode,
                        std::initializer_list<std::string> categoriesToLog,
                        int locationLogWidth) :
+  FileLogger(std::move(name), path, openMode, categoriesToLog, nullptr, locationLogWidth)
+{}
+
+FileLogger::FileLogger(std::string name,
+                       std::filesystem::path const& path,
+                       OpenMode openMode,
+                       std::function<bool(LogMessage const&)> filterFn,
+                       int locationLogWidth) :
+  FileLogger(std::move(name), path, openMode, std::initializer_list<std::string>{}, filterFn, locationLogWidth)
+{}
+
+FileLogger::FileLogger(std::string name,
+                       std::filesystem::path const& path,
+                       OpenMode openMode,
+                       std::initializer_list<std::string> categoriesToLog,
+                       std::function<bool(LogMessage const&)> filterFn,
+                       int locationLogWidth) :
+  ILogger(std::move(name)),
   m_CriticalSection(std::mutex()),
-  m_LocationLogWidth(locationLogWidth)
+  m_FilterFn(filterFn),
+  m_LocationLogWidth(locationLogWidth),
+  m_MutedCategories(std::vector<std::string>())
 {
   m_FileStream = std::ofstream();
   if (openMode == OpenMode::Append) {
@@ -19,33 +41,13 @@ FileLogger::FileLogger(std::filesystem::path const& path,
 
   if (!m_FileStream.is_open()) { throw std::runtime_error("Could not open file " + path.string()); }
 
-  std::vector<std::string> categories = std::vector<std::string>(categoriesToLog.begin(), categoriesToLog.end());
-  m_FilterFn = [categories](LogMessage const& logMessage) -> bool {
-    if (categories.size() == 0) {
-      return true;
-    }
-    auto it = std::find(categories.begin(), categories.end(), logMessage.Category);
-    return it != categories.end();
-  };
-}
-
-FileLogger::FileLogger(std::filesystem::path const& path,
-                       OpenMode openMode,
-                       std::function<bool(LogMessage const&)> filterFn,
-                       int locationLogWidth) :
-  m_CriticalSection(std::mutex()),
-  m_FilterFn(filterFn),
-  m_LocationLogWidth(locationLogWidth)
-{
-  m_FileStream = std::ofstream();
-  if (openMode == OpenMode::Append) {
-    m_FileStream.open(path.c_str(), std::ios::app | std::ios::out);
-  } else {
-    m_FileStream.open(path.c_str(), std::ios::trunc | std::ios::out);
-  }
-
-  if (!m_FileStream.is_open()) {
-    throw std::runtime_error("Could not open file " + path.string());
+  if (m_FilterFn == nullptr) {
+    std::vector<std::string> categories = std::vector<std::string>(categoriesToLog.begin(), categoriesToLog.end());
+    m_FilterFn = [categories](LogMessage const& logMessage) -> bool {
+      if (categories.size() == 0) { return true; }
+      auto it = std::find(categories.begin(), categories.end(), logMessage.Category);
+      return it != categories.end();
+    };
   }
 }
 
@@ -59,7 +61,9 @@ FileLogger::~FileLogger()
 
 bool FileLogger::ShouldLogMessage(LogMessage const& message) const
 {
-  return m_FilterFn(message);
+  auto it = std::find(m_MutedCategories.cbegin(), m_MutedCategories.cend(), message.Category);
+  if (it == m_MutedCategories.cend()) { return m_FilterFn(message); }
+  return false;
 }
 
 void FileLogger::LogDebug(LogMessage const& logMessage)
@@ -85,6 +89,17 @@ void FileLogger::LogError(LogMessage const& logMessage)
 void FileLogger::LogCritical(LogMessage const& logMessage)
 {
   Log("CRITICAL", logMessage);
+}
+
+void FileLogger::MuteCategory(std::string const& category)
+{
+  m_MutedCategories.push_back(category);
+}
+
+void FileLogger::UnmuteCategory(std::string const& category)
+{
+  auto it = std::find(m_MutedCategories.begin(), m_MutedCategories.end(), category);
+  if (it != m_MutedCategories.end()) { m_MutedCategories.erase(it); }
 }
 
 void FileLogger::Log(std::string const& type, LogMessage const& logMessage)

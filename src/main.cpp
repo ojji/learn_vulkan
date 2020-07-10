@@ -39,14 +39,18 @@ public:
     std::filesystem::path keyboardLog = Os::GetExecutableDirectory() / "logs/keyboard.log";
     std::filesystem::path rendererLog = Os::GetExecutableDirectory() / "logs/renderer.log";
 
-    Utils::Logger::Get().Register<Utils::ConsoleLogger>();
-    Utils::Logger::Get().Register<Utils::FileLogger>(debugLog, Utils::FileLogger::OpenMode::Truncate);
-    Utils::Logger::Get().Register<Utils::FileLogger>(keyboardLog,
+    Utils::Logger::Get().Register<Utils::ConsoleLogger>("ConsoleLogger");
+    Utils::Logger::Get().Register<Utils::FileLogger>("DebugLogger", debugLog, Utils::FileLogger::OpenMode::Truncate);
+    Utils::Logger::Get().Register<Utils::FileLogger>("KeyboardLogger",
+                                                     keyboardLog,
                                                      Utils::FileLogger::OpenMode::Truncate,
                                                      std::initializer_list<std::string>{ std::string("Keyboard") });
-    Utils::Logger::Get().Register<Utils::FileLogger>(rendererLog,
+    Utils::Logger::Get().Register<Utils::FileLogger>("RendererLogger",
+                                                     rendererLog,
                                                      Utils::FileLogger::OpenMode::Truncate,
                                                      std::initializer_list<std::string>{ std::string("Renderer") });
+    Utils::Logger::Get().MuteCategory("DebugLogger", "FrameStat");
+    Utils::Logger::Get().MuteCategory("ConsoleLogger", "FrameStat");
   }
 
   virtual ~SampleApp() {}

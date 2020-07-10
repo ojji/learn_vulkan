@@ -142,4 +142,25 @@ void Logger::LogCriticalEx(
   }
 }
 
+void Logger::MuteCategory(std::string const& loggerToMute, std::string const& category)
+{
+  for (auto const& logger : m_Loggers) {
+    if (logger->GetName() == loggerToMute) {
+      logger->MuteCategory(category);
+      std::string message = "Logger '" + logger->GetName() + "' muted category '" + category + "'.";
+      Logger::LogDebug(message, "Logging");
+    }
+  }
+}
+
+void Logger::UnmuteCategory(std::string const& loggerToUnmute, std::string const& category)
+{
+  for (auto const& logger : m_Loggers) {
+    if (logger->GetName() == loggerToUnmute) {
+      logger->UnmuteCategory(category);
+      std::string message = "Logger '" + logger->GetName() + "' unmuted category '" + category + "'.";
+      Logger::LogDebug(message, "Logging");
+    }
+  }
+}
 } // namespace Utils
